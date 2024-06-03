@@ -2,9 +2,9 @@ use env_logger::Env;
 use rustc_hash::FxHashSet;
 use std::time::Instant;
 use tucanos::{
-    graph::ConnectedComponents, mesh::SimplexMesh, mesh_partition::PartitionType,
-    test_meshes::test_mesh_3d, topo_elems::Tetrahedron, Idx, Result, Tag,
+    mesh::{PartitionType, ConnectedComponents}, Idx, Result, Tag,
 };
+use tucanos::mesh::test_meshes::test_mesh_3d;
 
 pub fn init_log(level: &str) {
     env_logger::Builder::from_env(Env::default().default_filter_or(level))
@@ -16,19 +16,17 @@ fn main() -> Result<()> {
     init_log("error");
 
     // Load the mesh
-    let mut mesh = SimplexMesh::<3, Tetrahedron>::read_meshb("data/simple3d.meshb")?;
-    let mut _mesh = test_mesh_3d().split().split().split();
+    //let mut mesh = SimplexMesh::<3, Tetrahedron>::read_meshb("data/simple3d.meshb")?;
+    let mut mesh = test_mesh_3d().split().split().split();
 
     let n_parts = 8;
 
     let ptypes = [
         PartitionType::Hilbert(n_parts),
-        PartitionType::Scotch(n_parts),
+        //PartitionType::Scotch(n_parts),
         PartitionType::MetisRecursive(n_parts),
         PartitionType::MetisKWay(n_parts),
-        PartitionType::KaHIPFast(n_parts, 0.01),
-        PartitionType::KaHIPEco(n_parts, 0.01),
-        PartitionType::KaHIPStrong(n_parts, 0.01),
+        
     ];
 
     for ptype in ptypes {

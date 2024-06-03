@@ -38,11 +38,15 @@ minimeshb = { git = "https://github.com/tucanos/minimeshb.git", tag = "0.1.0" }
 
 [[bin]]
 name = "test_simple3d"
-required-features = ["scotch"]
+required-features = ["metis"]
 
 [[bin]]
 name = "test_partition"
-required-features = ["scotch", "metis", "kahip", "meshb"]
+required-features = ["metis"]
+
+[[bin]]
+name = "test_partition_new"
+required-features=["metis"]
 
 [profile.release]
 debug = 1
