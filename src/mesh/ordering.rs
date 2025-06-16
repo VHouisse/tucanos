@@ -4,7 +4,6 @@ use crate::{
 };
 use lindel::Lineariseable;
 use log::debug;
-
 fn get_indices<F: Fn(usize) -> usize>(n: usize, comp: F) -> Vec<Idx> {
     let mut indices = Vec::with_capacity(n);
     indices.extend(0..n);
@@ -121,26 +120,13 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
         self.clear_face_to_elems();
     }
 
-    /// Reorder the vertices, elements and faces using a Hilbert SFC
-    /// Elements and faces are renumbered using their minumim vertex Id and not the
-    /// coordinate of their centers
+    /// Reorder the vertices, elements and faces using a Hilbert SFC.
+    /// Elements and faces are renumbered using their minimum vertex Id.
     pub fn reorder_hilbert(&mut self) -> (Vec<Idx>, Vec<Idx>, Vec<Idx>) {
         debug!("Reordering the vertices / elements / faces (Hilbert)");
 
         let new_vert_indices = hilbert_indices(self.bounding_box(), self.verts());
         self.reorder_vertices(&new_vert_indices);
-
-        // // Sort the elems
-        // let hilbert_e = |i: usize| hilbert(self.elem_center(i as Idx).as_slice()) as usize;
-
-        // let new_indices = get_indices(self.n_elems() as usize, hilbert_e);
-        // self.reorder_elems(&new_indices);
-
-        // // Sort the faces
-        // let hilbert_f = |i: usize| hilbert(self.face_center(i as Idx).as_slice()) as usize;
-
-        // let new_indices = get_indices(self.n_faces() as usize, hilbert_e);
-        // self.reorder_faces(&new_indices);
 
         let (new_elem_indices, new_face_indices) = self.reorder_elems_and_faces();
 

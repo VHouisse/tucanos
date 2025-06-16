@@ -8,10 +8,7 @@ use super::{
     vector::Vector,
 };
 use crate::{
-    Dim, Error, Idx, Result, Tag, TopoTag,
-    metric::IsoMetric,
-    min_max_iter,
-    spatialindex::{DefaultObjectIndex, DefaultPointIndex, ObjectIndex, PointIndex},
+    metric::{AnisoMetric,AnisoMetric3d, IsoMetric, Metric}, min_max_iter, spatialindex::{DefaultObjectIndex, DefaultPointIndex, ObjectIndex, PointIndex}, Dim, Error, Idx, Result, Tag, TopoTag
 };
 use log::{debug, warn};
 use nalgebra::SVector;
@@ -342,7 +339,7 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
     }
 
     /// Get an iterator through the geometric faces
-    pub fn gfaces(&self) -> impl Iterator<Item = <E::Face as Elem>::Geom<D, IsoMetric<D>>> + '_ {
+    pub fn gfaces(&self) -> impl ExactSizeIterator<Item = <E::Face as Elem>::Geom<D, IsoMetric<D>>> + '_ {
         self.faces().map(|f| self.gface(f))
     }
 
@@ -1423,7 +1420,7 @@ impl SimplexMesh<3, Tetrahedron> {
         let end = self.n_elems();
         ([start, end], indices)
     }
-
+    
     pub fn add_tets<
         'a,
         I1: ExactSizeIterator<Item = &'a [Idx]>,
@@ -1493,6 +1490,63 @@ impl SimplexMesh<3, Tetrahedron> {
         }
         let end = self.n_elems();
         ([start, end], indices)
+    }
+
+    pub fn work_evaluation_iso(&self, _p_metrics_vec : &Vec<IsoMetric<3>>)-> Vec<usize>{
+        let n = self.n_elems() as usize;
+        let weights = vec![0; n]; 
+        let _implied_metrics = self.implied_metric();
+        // Déduire de la métrique aniso, une métrique isométrique moyenne dans chaque direction.
+        let _intersected_metrics = 42;
+        // For every elems : Compute both Metric with exp ( sum 1 to k 1/k ln(M(Si))) in the same element compute intersected Metric and then compute each density
+        // Compute element volume
+        weights 
+    }
+    // Adapted from the formula inside A. Loseille ∗, F. Alauzet, V. Menier 
+    // "Unique cavity-based operator and hierarchical domain partitioning for fast parallel generation of anisotropic meshes".
+    pub fn work_eval(initial_density : f64, actual_density : f64, intersected_density : f64, vol: f64 )-> f64{
+        // Set up to csts and evaluate real coeff 
+        let insert_c : f64 = 2.0;
+        let collapse_c: f64  = 3.0;
+        let optimization_c : f64 = 4.0;
+        let work = vol * (insert_c * (intersected_density - initial_density) + collapse_c * (intersected_density - actual_density) + optimization_c * actual_density);
+        work
+    }
+    pub fn work_evaluation_aniso(&self, _p_metrics_vec : &Vec<AnisoMetric3d>)-> Vec<f64>{
+        // Double check on how is the metric interpolated 
+        let _implied_metrics = self.implied_metric().unwrap();
+
+        let _intersected_metrics : Vec<AnisoMetric3d> = _implied_metrics
+                                    .iter()
+                                    .zip(_p_metrics_vec.iter())
+                                    .map(|(_implied_metrics_ref, _p_m_ref)| {_implied_metrics_ref.intersect(_p_m_ref)})
+                                    .collect();
+                                
+        let _d_initial_metric : Vec<f64> = _p_metrics_vec
+                                .iter()
+                                .map(|_p_metric_ref| {_p_metric_ref.density()})
+                                .collect();
+
+        let _d_actual_metric: Vec<f64> = _implied_metrics
+                                .iter()
+                                .map(|_implied_metrics_ref| {_implied_metrics_ref.density()} )
+                                .collect();
+
+        let _d_intersected : Vec<f64> = _intersected_metrics
+                                .iter()
+                                .map(|_intersected_metric_ref| {_intersected_metric_ref.density()})
+                                .collect();
+
+        let volumes : Vec<f64> = self.get_elem_volumes().unwrap().to_vec();
+
+        let weights : Vec<f64> = _d_initial_metric
+                    .iter()
+                    .zip(_d_actual_metric.iter())
+                    .zip(_d_intersected.iter())
+                    .zip(volumes.iter())
+                    .map(|(((_d_i_m,_d_a_m),_d_id),vol)| Self::work_eval(*_d_i_m,*_d_a_m,*_d_id, *vol))
+                    .collect();
+        weights
     }
 }
 
@@ -1739,5 +1793,23 @@ mod tests {
         let (gamma_min, gamma_max) = min_max_iter(mesh.elem_gammas());
         assert!((gamma_min - 0.623).abs() < 1e-3);
         assert!((gamma_max - 1.0).abs() < 1e-3);
+    }
+    #[test]
+    fn test_work_evaluation(){
+        use crate::mesh::Point;
+        use crate::metric::{Metric, AnisoMetric3d};
+        let mut mesh = test_mesh_3d().split().split().split();
+        let n = mesh.n_elems() as usize;
+        let v0 = Point::<3>::new(1.0, 0., 0.);
+        let v1 = Point::<3>::new(0., 0.1, 0.);
+        let v2 = Point::<3>::new(0., 0., 0.01);
+        let m = AnisoMetric3d::from_sizes(&v0, &v1, &v2);
+        assert!(f64::abs(m.vol() - 0.001) < 1e-12);
+        let aniso_vec = vec![m;n];
+        mesh.compute_vertex_to_elems();
+        mesh.compute_volumes();
+        let weights = mesh.work_evaluation_aniso(&aniso_vec);
+        println!("{:?}", weights);
+        
     }
 }

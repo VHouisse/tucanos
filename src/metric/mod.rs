@@ -1,7 +1,7 @@
 mod complexity;
 mod curvature;
 mod gradation;
-mod implied;
+pub mod implied;
 mod reduction;
 mod scaling;
 mod smoothing;
@@ -107,6 +107,7 @@ pub trait Metric<const D: usize>:
 
         res
     }
+    
 }
 
 /// Isotropic metric in D dimensions
@@ -294,6 +295,8 @@ where
     fn from_diagonal(s: &[f64]) -> Self;
 
     fn scale_aniso(&mut self, s: f64);
+
+    fn density(&self)-> f64;
 }
 
 impl fmt::Display for AnisoMetric3d {
@@ -336,7 +339,6 @@ where
     fn length(&self, e: &Point<D>) -> f64 {
         (self.as_mat() * e).dot(e).sqrt()
     }
-
     /// For an anisotropic metric, the volume is
     /// ```math
     /// V(\mathcal M) =  \frac{1}{\sqrt{\det(\mathcal M)}}
@@ -494,6 +496,8 @@ where
     fn scale(&mut self, s: f64) {
         self.scale_aniso(s);
     }
+
+    
 }
 
 /// Anisotropic metric in 2D, represented with 3 scalars $`(x_0,x_1,x_2)`$
@@ -595,6 +599,11 @@ impl AnisoMetric<2> for AnisoMetric2d {
             self.m[i] *= s;
         }
         self.v /= f64::sqrt(f64::powi(s, 2));
+    }
+
+    fn density(&self)-> f64 {
+        let density = self.as_mat().determinant().sqrt();
+        density 
     }
 }
 
@@ -726,6 +735,11 @@ impl AnisoMetric<3> for AnisoMetric3d {
 
     fn as_mat(&self) -> SMatrix<f64, 3, 3> {
         Self::slice_to_mat(&self.m)
+    }
+
+    fn density(&self)-> f64 {
+        let density = self.as_mat().determinant().sqrt();
+        density 
     }
 
     fn from_iso(iso: &IsoMetric<3>) -> Self {

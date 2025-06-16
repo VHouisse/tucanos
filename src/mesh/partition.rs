@@ -3,6 +3,7 @@ use crate::{
     mesh::{Elem, GElem, SimplexMesh, ordering::hilbert_indices},
 };
 use log::{debug, warn};
+use std::fmt;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
@@ -12,6 +13,18 @@ pub enum PartitionType {
     MetisRecursive(Idx),
     MetisKWay(Idx),
     None,
+}
+impl fmt::Display for PartitionType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PartitionType::Hilbert(n) => write!(f, "Hilbert_{}", n), 
+            PartitionType::Scotch(n) => write!(f, "Scotch_{}", n),
+            PartitionType::MetisRecursive(n) => write!(f, "MetisRecursive_{}", n),
+            PartitionType::MetisKWay(n) => write!(f, "MetisKWay_{}", n),
+            PartitionType::None => write!(f,"None")
+            
+        }
+    }
 }
 
 impl<const D: usize, E: Elem> SimplexMesh<D, E> {
@@ -148,7 +161,7 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
             .copied()
             .map(|x| x.try_into().unwrap())
             .collect();
-
+        
         let graph = metis::Graph::new(1, n_parts as metis::Idx, &mut xadj, &mut adjncy);
         match method {
             "recursive" => graph.part_recursive(&mut partition).unwrap(),
