@@ -75,7 +75,7 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
         let n_elems = self.n_elems() as usize;
         let n_verts = self.n_verts() as usize;
         assert_eq!(v.len(), n_elems);
-
+        println!("n_verts {}", n_verts);
         let mut res = vec![M::default(); n_verts];
 
         let v2e = self.get_vertex_to_elems()?;
@@ -99,7 +99,7 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
                 let wm = weights.iter().copied().zip(metrics.iter());
                 *m_vert = M::interpolate(wm);
             });
-
+        println!("Size of the implied metric supposed to be 2560 {}", res.len());
         Ok(res)
     }
 

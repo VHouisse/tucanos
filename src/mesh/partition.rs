@@ -1,10 +1,9 @@
 use crate::{
-    Idx, Result, Tag,
-    mesh::{Elem, GElem, SimplexMesh, ordering::hilbert_indices},
+    mesh::{ordering::hilbert_indices, ConnectedComponents, ConnectedComponentsInfo, Elem, GElem, SimplexMesh}, Idx, Result, Tag
 };
 use log::{debug, warn};
-use std::fmt;
-
+use std::{collections::{HashMap, HashSet}, fmt};
+use rustc_hash::FxHashSet;
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub enum PartitionType {
@@ -12,6 +11,7 @@ pub enum PartitionType {
     Scotch(Idx),
     MetisRecursive(Idx),
     MetisKWay(Idx),
+    HilbertB(Idx),
     None,
 }
 impl fmt::Display for PartitionType {
@@ -21,6 +21,7 @@ impl fmt::Display for PartitionType {
             PartitionType::Scotch(n) => write!(f, "Scotch_{}", n),
             PartitionType::MetisRecursive(n) => write!(f, "MetisRecursive_{}", n),
             PartitionType::MetisKWay(n) => write!(f, "MetisKWay_{}", n),
+            PartitionType::HilbertB(n) => write!(f, "Hilbert_Ball_{}", n),
             PartitionType::None => write!(f,"None")
             
         }
@@ -37,6 +38,9 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
             PartitionType::Scotch(n) => self.partition_scotch(n),
             PartitionType::MetisRecursive(n) => self.partition_metis(n, "recursive"),
             PartitionType::MetisKWay(n) => self.partition_metis(n, "kway"),
+            PartitionType::HilbertB(n) => {
+                self.partition_hilbert_ball( n );
+                Ok(())},
             PartitionType::None => unreachable!(),
         }
     }
@@ -61,6 +65,119 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
                 .for_each(|(i, t)| *t = partition[i] as Tag + 1);
         }
     }
+
+    pub fn partition_hilbert_ball(&mut self, n_parts: Idx){
+        debug!("Partition the mesh into {n_parts} using a Hilbert curve & elmnt ball");
+        if self.etags().any(|t| t != 1) {
+            warn!("Erase the element tags");
+        }
+        if n_parts == 1 {
+            self.mut_etags().for_each(|t| *t = 1);
+           
+        } else {
+                let weights = self.get_elem_work().unwrap();
+                // Suppose that elements have been renumbered using Hilbert Curve  
+                let total_work : f64 = weights.iter().sum();
+                let work_per_partition = total_work / n_parts as f64; 
+                let indices : Vec<u32> = (0..self.n_verts() as u32).collect();
+                // Il faut que vertex_to_elems soient calculé
+                let v2e_graph = self.get_vertex_to_elems().unwrap();
+                let mut assigned_elements : HashSet<Idx> = HashSet::new();
+                
+                let mut partition : Vec<Tag> = vec![0;self.n_elems() as usize]; 
+                let mut current_partition_idx = 0;
+                // TODO : Changer en vecteur de travail pour assigner un travail à chaque sous partition
+                // Faire un choix sur l'implémentation 
+                let mut current_work_partition = 0.0;
+
+                //To parallelize 
+                for &vertex_id in indices.iter(){
+                    let element_in_ball = v2e_graph.row(vertex_id);
+                    for &elem_idx in element_in_ball{
+                        if !assigned_elements.contains(&elem_idx){
+                            let elem_work = weights[elem_idx as usize];
+                            if (current_work_partition + elem_work ) > work_per_partition{
+                                current_work_partition = 0.0;
+                                if current_partition_idx + 2 <= n_parts{
+                                    current_partition_idx +=1;
+                                }
+                            }else{
+                                current_work_partition += elem_work;
+                            }
+                            partition[elem_idx as usize] = current_partition_idx as Tag;
+                            assigned_elements.insert(elem_idx);
+                        }
+                    }
+                }
+
+                self.mut_etags()
+                .enumerate()
+                .for_each(|(i, t)| *t = partition[i] as Tag + 1);
+        }
+        
+    }
+
+    // Depending on the type of connectivity used 
+    pub fn partition_correction(&mut self, n_parts: Idx){        
+        debug!("Correcting Connected Components"); 
+        let work = self.get_elem_work().unwrap();
+        let mut cc_infos: Vec<ConnectedComponentsInfo> = Vec::new();
+        for i_part in 0..n_parts{
+            let mut smsh = self.extract_tag(i_part as Tag + 1);
+            let e2e = smsh.mesh.compute_elem_to_elems(); 
+            let cc = ConnectedComponents::<Idx>::new(e2e);
+            let mut _n_cc = 1; 
+            if let Ok(cc_graph) = cc{
+                _n_cc = cc_graph.tags().iter().clone().collect::<FxHashSet<_>>().len();
+                let cc_tags = cc_graph.tags();
+                // Regroupe les éléments d'une composante connexe d'un subMeshpar un id
+                let mut current_partition_cc : HashMap<Idx, Vec<Idx>> = HashMap::new();
+                for(sub_elem_idx, &cc_id) in cc_tags.iter().enumerate(){
+                    let parent_elemnt_id  = smsh.parent_elem_ids[sub_elem_idx];
+                    current_partition_cc.entry(cc_id).or_default().push(parent_elemnt_id);
+                }
+
+                let mut current_partition_cc_infos: Vec<ConnectedComponentsInfo> = Vec::new();
+                let mut max_work_per_cc = 0.0 ; 
+                let mut _primary_cc_id = Idx::MAX;
+
+                for (cc_id, elements_in_cc) in current_partition_cc{
+                    let current_cc_work : f64 = elements_in_cc
+                                                .iter()
+                                                .map(|&elemn_parent_id| work[elemn_parent_id as usize])
+                                                .sum();
+                    current_partition_cc_infos.push(ConnectedComponentsInfo{
+                        cc_idx : cc_id,
+                        elements : elements_in_cc,
+                        total_work : current_cc_work,
+                        is_primary : false,
+                        partition_id : i_part as Tag + 1
+
+                    });
+                    
+                    if current_cc_work > max_work_per_cc {
+                        max_work_per_cc  = current_cc_work;
+                       _primary_cc_id = cc_id;
+                    }
+
+                    for cc_info in &mut current_partition_cc_infos {
+                        if cc_info.cc_idx == _primary_cc_id {
+                            cc_info.is_primary = true;
+                        }
+                    }
+                    
+                }
+                cc_infos.extend(current_partition_cc_infos);
+    
+            }
+
+        }
+
+        // Fusion Part
+
+      
+    }
+
 
     #[allow(clippy::needless_pass_by_ref_mut)]
     #[cfg(not(feature = "scotch"))]

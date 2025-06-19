@@ -1,11 +1,10 @@
 use crate::{
-    Error, Idx, Result,
-    mesh::{Elem, vector},
+    mesh::{vector, Elem}, Error, Idx, Result, Tag
 };
 use num::PrimInt;
 use rustc_hash::FxHashMap;
 use std::{collections::hash_map::Entry, fmt::Display, ops::AddAssign};
-
+use std::fmt;
 /// Renumber the vertices in order to have contininuous indices, and return he map from old to nex indices
 #[must_use]
 pub fn reindex<E: Elem>(elems: &vector::Vector<E>) -> (Vec<E>, FxHashMap<Idx, Idx>) {
@@ -220,6 +219,50 @@ impl<T: PrimInt + AddAssign + Display> ConnectedComponents<T> {
         Ok(())
     }
 }
+#[derive(Debug)]
+pub struct ConnectedComponentsInfo{
+    pub cc_idx : Idx,
+    pub elements : Vec<Idx>,
+    pub total_work : f64,
+    pub is_primary : bool,
+    pub partition_id : Tag,
+}
+
+impl ConnectedComponentsInfo{
+    #[must_use]
+    pub fn new(
+        cc_idx : Idx,
+        elements : Vec<Idx>,
+        total_work : f64,
+        is_primary: bool,
+        partition_id : Tag,
+    )->Self{ 
+        Self{
+        cc_idx,
+        elements,
+        total_work,
+        is_primary,
+        partition_id,
+        }
+    }
+}
+impl fmt::Display for ConnectedComponentsInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Vous pouvez choisir le format qui vous convient le mieux.
+        // Voici un exemple qui affiche tous les champs de manière lisible.
+        write!(
+            f,
+            "ConnectedComponentInfo {{ cc_idx: {}, elements: {}, total_work: {:.2}, is_primary: {}, partition_id: {} }}",
+            self.cc_idx,
+            self.elements[0],
+            self.total_work,
+            self.is_primary,
+            self.partition_id
+        )
+    }
+}
+
+
 
 #[cfg(test)]
 mod tests {

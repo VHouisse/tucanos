@@ -140,6 +140,7 @@ impl<const D: usize, E: Elem> ParallelRemesher<D, E> {
         let now = Instant::now();
         match partition_type {
             PartitionType::Hilbert(n)
+            | PartitionType::HilbertB(n)
             | PartitionType::Scotch(n)
             | PartitionType::MetisRecursive(n)
             | PartitionType::MetisKWay(n) => {

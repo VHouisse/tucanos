@@ -19,7 +19,7 @@ use rayon::{
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::HashMap;
 use std::marker::PhantomData;
-
+use rayon::prelude::IntoParallelRefMutIterator;
 /// A mesh containing a single type of elements in D-dimensions
 #[derive(Debug, Default)]
 pub struct SimplexMesh<const D: usize, E: Elem> {
@@ -57,6 +57,8 @@ pub struct SimplexMesh<const D: usize, E: Elem> {
     topo: Option<Topology>,
     /// Vertex tags
     vtags: Option<Vec<TopoTag>>,
+    // Work per element for remeshing
+    weigths : Option<Vec<f64>>,
 }
 
 impl<const D: usize, E: Elem> Clone for SimplexMesh<D, E> {
@@ -123,6 +125,7 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
             vert_vol: None,
             topo: None,
             vtags: None,
+            weigths : None,
         }
     }
 
@@ -162,6 +165,7 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
             vert_vol: None,
             topo: None,
             vtags: None,
+            weigths: None,
         }
     }
 
@@ -547,6 +551,11 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
         self.vert_vol = None;
     }
 
+    /// Clear the element work values.
+    pub fn clear_elem_work(&mut self) {
+        self.weigths = None;
+    }
+
     /// Get the vertex volumes
     pub fn get_vertex_volumes(&self) -> Result<&[f64]> {
         if self.vert_vol.is_none() {
@@ -563,6 +572,26 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
         } else {
             Ok(self.elem_vol.as_ref().unwrap())
         }
+    }
+
+    /// Get the element work
+    pub fn get_elem_work(&self) -> Result<&[f64]>{
+        if self.weigths.is_none(){
+            Err(Error::from("Work per elem not computed"))
+        }else{
+            Ok(self.weigths.as_ref().unwrap())
+        }
+    }
+
+    /// Set the element work values
+    pub fn set_elem_work(&mut self, new_weights : Vec<f64>)-> Result<()>{
+        if new_weights.len() as Idx != self.n_elems() {
+            return Err(Error::from(
+                "Length of new_weights  does not match number of elements ()"));
+        }
+        debug!("Setting element work values");
+        self.weigths = Some(new_weights);
+        Ok(())
     }
 
     /// Compute an octree to locate elements
@@ -1506,16 +1535,22 @@ impl SimplexMesh<3, Tetrahedron> {
     // "Unique cavity-based operator and hierarchical domain partitioning for fast parallel generation of anisotropic meshes".
     pub fn work_eval(initial_density : f64, actual_density : f64, intersected_density : f64, vol: f64 )-> f64{
         // Set up to csts and evaluate real coeff 
-        let insert_c : f64 = 2.0;
-        let collapse_c: f64  = 3.0;
-        let optimization_c : f64 = 4.0;
+        let insert_c : f64 = 1.0;
+        let collapse_c: f64  = 1.0;
+        let optimization_c : f64 = 1.0;
         let work = vol * (insert_c * (intersected_density - initial_density) + collapse_c * (intersected_density - actual_density) + optimization_c * actual_density);
         work
     }
-    pub fn work_evaluation_aniso(&self, _p_metrics_vec : &Vec<AnisoMetric3d>)-> Vec<f64>{
+    pub fn work_evaluation_aniso(&mut self, _p_metrics_vec : &Vec<AnisoMetric3d>){
         // Double check on how is the metric interpolated 
-        let _implied_metrics = self.implied_metric().unwrap();
+        let mut _implied_metrics = vec![AnisoMetric3d::default(); self.n_elems() as usize];
+        
+        _implied_metrics
+            .par_iter_mut()
+            .zip(self.par_gelems())
+            .for_each(|(m, ge)| *m = ge.implied_metric());
 
+        assert_eq!(_implied_metrics.len(), _p_metrics_vec.len());
         let _intersected_metrics : Vec<AnisoMetric3d> = _implied_metrics
                                     .iter()
                                     .zip(_p_metrics_vec.iter())
@@ -1538,7 +1573,7 @@ impl SimplexMesh<3, Tetrahedron> {
                                 .collect();
 
         let volumes : Vec<f64> = self.get_elem_volumes().unwrap().to_vec();
-
+        
         let weights : Vec<f64> = _d_initial_metric
                     .iter()
                     .zip(_d_actual_metric.iter())
@@ -1546,7 +1581,8 @@ impl SimplexMesh<3, Tetrahedron> {
                     .zip(volumes.iter())
                     .map(|(((_d_i_m,_d_a_m),_d_id),vol)| Self::work_eval(*_d_i_m,*_d_a_m,*_d_id, *vol))
                     .collect();
-        weights
+
+        let _ = self.set_elem_work(weights);
     }
 }
 

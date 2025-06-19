@@ -46,8 +46,6 @@ required-features = ["metis"]
 
 [[bin]]
 name = "test_partition_new"
-required-features=["metis"]
-
 [profile.release]
 debug = 1
 

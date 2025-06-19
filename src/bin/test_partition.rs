@@ -11,12 +11,9 @@ pub fn init_log(level: &str) {
         .format_timestamp(None)
         .init();
 }
-use cpuprofiler::PROFILER;
-use tucanos::metric::IsoMetric;
 
 fn main() -> Result<()> {
     init_log("error");
-    PROFILER.lock().unwrap().start("./my_profile.profile").unwrap();
     let mut renumbering :bool = true;
     // Dossier pour les sorties vtu 
     let mut output_dir = Path::new("mesh_partitions_renumbered");
@@ -35,8 +32,8 @@ fn main() -> Result<()> {
         let ptypes = [
             PartitionType::Hilbert(n_parts),
             //PartitionType::Scotch(n_parts),
-            //PartitionType::MetisRecursive(n_parts),
-            //PartitionType::MetisKWay(n_parts),
+            PartitionType::MetisRecursive(n_parts),
+            PartitionType::MetisKWay(n_parts),
             
         ];
 
@@ -49,8 +46,6 @@ fn main() -> Result<()> {
                 mesh.reorder_hilbert();
             }
             mesh.partition(ptype)?;
-            let m0 = IsoMetric::<3>::from(0.01);
-            mesh.work_evaluation(m0);
             let t = now.elapsed().as_secs_f64();
             mesh.compute_face_to_elems();
             let q = mesh.partition_quality()?;
@@ -79,6 +74,5 @@ fn main() -> Result<()> {
             }
         }
     }
-    PROFILER.lock().unwrap().stop().unwrap();
     Ok(())
 }

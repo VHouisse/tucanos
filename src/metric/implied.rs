@@ -9,12 +9,11 @@ impl SimplexMesh<3, Tetrahedron> {
     /// Compute the element-implied metric
     pub fn implied_metric(&self) -> Result<Vec<AnisoMetric3d>> {
         let mut implied_metric = vec![AnisoMetric3d::default(); self.n_elems() as usize];
-
+        
         implied_metric
             .par_iter_mut()
             .zip(self.par_gelems())
             .for_each(|(m, ge)| *m = ge.implied_metric());
-
         self.elem_data_to_vertex_data_metric(&implied_metric)
     }
 }
