@@ -46,8 +46,9 @@ required-features = ["metis"]
 
 [[bin]]
 name = "test_partition_new"
-[profile.release]
-debug = 1
+
+[[bin]]
+name = "test_remeshing"
 
 [lints]
 workspace = true

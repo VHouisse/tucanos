@@ -80,14 +80,12 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
                 let total_work : f64 = weights.iter().sum();
                 let work_per_partition = total_work / n_parts as f64; 
                 let indices : Vec<u32> = (0..self.n_verts() as u32).collect();
-                // Il faut que vertex_to_elems soient calculé
+    
                 let v2e_graph = self.get_vertex_to_elems().unwrap();
                 let mut assigned_elements : HashSet<Idx> = HashSet::new();
                 
                 let mut partition : Vec<Tag> = vec![0;self.n_elems() as usize]; 
                 let mut current_partition_idx = 0;
-                // TODO : Changer en vecteur de travail pour assigner un travail à chaque sous partition
-                // Faire un choix sur l'implémentation 
                 let mut current_work_partition = 0.0;
 
                 //To parallelize 

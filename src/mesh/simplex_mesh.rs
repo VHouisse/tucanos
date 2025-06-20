@@ -1551,30 +1551,30 @@ impl SimplexMesh<3, Tetrahedron> {
             .for_each(|(m, ge)| *m = ge.implied_metric());
 
         assert_eq!(_implied_metrics.len(), _p_metrics_vec.len());
-        let _intersected_metrics : Vec<AnisoMetric3d> = _implied_metrics
+        let _intersected_metrics : Vec<_> = _implied_metrics
                                     .iter()
                                     .zip(_p_metrics_vec.iter())
                                     .map(|(_implied_metrics_ref, _p_m_ref)| {_implied_metrics_ref.intersect(_p_m_ref)})
                                     .collect();
                                 
-        let _d_initial_metric : Vec<f64> = _p_metrics_vec
+        let _d_initial_metric : Vec<_> = _p_metrics_vec
                                 .iter()
                                 .map(|_p_metric_ref| {_p_metric_ref.density()})
                                 .collect();
 
-        let _d_actual_metric: Vec<f64> = _implied_metrics
+        let _d_actual_metric: Vec<_> = _implied_metrics
                                 .iter()
                                 .map(|_implied_metrics_ref| {_implied_metrics_ref.density()} )
                                 .collect();
 
-        let _d_intersected : Vec<f64> = _intersected_metrics
+        let _d_intersected : Vec<_> = _intersected_metrics
                                 .iter()
                                 .map(|_intersected_metric_ref| {_intersected_metric_ref.density()})
                                 .collect();
 
-        let volumes : Vec<f64> = self.get_elem_volumes().unwrap().to_vec();
+        let volumes = self.get_elem_volumes().unwrap().to_vec();
         
-        let weights : Vec<f64> = _d_initial_metric
+        let weights : Vec<_> = _d_initial_metric
                     .iter()
                     .zip(_d_actual_metric.iter())
                     .zip(_d_intersected.iter())
