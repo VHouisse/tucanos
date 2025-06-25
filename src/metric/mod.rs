@@ -107,13 +107,13 @@ pub trait Metric<const D: usize>:
 
         res
     }
-    
 }
 
 /// Isotropic metric in D dimensions
 /// The metric is represented by a single scalar, which represents the characteristic size in all the directions
 #[derive(Clone, Copy, Debug)]
 pub struct IsoMetric<const D: usize>(f64);
+
 
 impl<const D: usize> IsoMetric<D> {
     /// Create an `IsoMetric` from size h
@@ -126,6 +126,10 @@ impl<const D: usize> IsoMetric<D> {
     #[must_use]
     pub const fn h(&self) -> f64 {
         self.0
+    }
+
+    pub fn density(&self)->f64{
+        (self.h().powf(-2.0 * D as f64)).sqrt()
     }
 }
 
@@ -211,6 +215,10 @@ impl<const D: usize> Metric<D> for IsoMetric<D> {
     fn control_step(&mut self, other: &Self, f: f64) {
         self.0 = f64::min(self.0, other.0 * f).max(other.0 / f);
     }
+
+    
+    
+
 }
 
 impl<const D: usize> IntoIterator for IsoMetric<D> {
@@ -233,6 +241,7 @@ pub trait AnisoMetric<const D: usize>: Metric<D> + Index<usize, Output = f64> + 
 where
     Const<D>: nalgebra::ToTypenum + nalgebra::DimSub<nalgebra::U1>,
     DefaultAllocator: Allocator<<Const<D> as nalgebra::DimSub<nalgebra::U1>>::Output>,
+    
 {
     const N: usize;
 
@@ -295,8 +304,9 @@ where
     fn from_diagonal(s: &[f64]) -> Self;
 
     fn scale_aniso(&mut self, s: f64);
+    
+    fn density(&self)->f64;
 
-    fn density(&self)-> f64;
 }
 
 impl fmt::Display for AnisoMetric3d {
@@ -324,6 +334,7 @@ impl<const D: usize, T: AnisoMetric<D>> Metric<D> for T
 where
     Const<D>: nalgebra::ToTypenum + nalgebra::DimSub<nalgebra::U1>,
     DefaultAllocator: Allocator<<Const<D> as nalgebra::DimSub<nalgebra::U1>>::Output>,
+    
 {
     const N: usize = <Self as AnisoMetric<D>>::N;
 
@@ -495,9 +506,9 @@ where
 
     fn scale(&mut self, s: f64) {
         self.scale_aniso(s);
-    }
+    } 
 
-    
+  
 }
 
 /// Anisotropic metric in 2D, represented with 3 scalars $`(x_0,x_1,x_2)`$
@@ -600,11 +611,10 @@ impl AnisoMetric<2> for AnisoMetric2d {
         }
         self.v /= f64::sqrt(f64::powi(s, 2));
     }
-
-    fn density(&self)-> f64 {
-        let density = self.as_mat().determinant().sqrt();
-        density 
+    fn density(&self)->f64 {
+        self.as_mat().determinant().sqrt()
     }
+
 }
 
 impl IntoIterator for AnisoMetric2d {
@@ -737,10 +747,6 @@ impl AnisoMetric<3> for AnisoMetric3d {
         Self::slice_to_mat(&self.m)
     }
 
-    fn density(&self)-> f64 {
-        let density = self.as_mat().determinant().sqrt();
-        density 
-    }
 
     fn from_iso(iso: &IsoMetric<3>) -> Self {
         let s = 1. / (iso.0 * iso.0);
@@ -766,6 +772,9 @@ impl AnisoMetric<3> for AnisoMetric3d {
             self.m[i] *= s;
         }
         self.v /= f64::sqrt(f64::powi(s, 3));
+    }
+      fn density(&self)->f64 {
+        self.as_mat().determinant().sqrt()
     }
 }
 

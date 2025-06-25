@@ -38,7 +38,7 @@ minimeshb = { git = "https://github.com/tucanos/minimeshb.git", tag = "0.1.0" }
 
 [[bin]]
 name = "test_simple3d"
-required-features = ["metis"]
+required-features = ["scotch"]
 
 [[bin]]
 name = "test_partition"
@@ -48,7 +48,10 @@ required-features = ["metis"]
 name = "test_partition_new"
 
 [[bin]]
-name = "test_remeshing"
+name ="test_correcting"
+
+[[bin]]
+name = "partition_3d"
 
 [lints]
 workspace = true

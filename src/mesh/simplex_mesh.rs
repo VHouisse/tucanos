@@ -259,6 +259,11 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
         self.etags.iter()
     }
 
+    pub fn get_etags_mut(&mut self) -> &mut Vec<Tag> {
+        self.etags.as_std_mut()
+    }
+
+
     /// Get a parallel iterator through the elements tags
     #[must_use]
     pub fn par_etags(&self) -> impl IndexedParallelIterator<Item = Tag> + '_ {
@@ -386,7 +391,6 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
             Ok(self.faces_to_elems.as_ref().unwrap())
         }
     }
-
     /// Compute the vertex-to-element connectivity
     pub fn compute_vertex_to_elems(&mut self) -> &CSRGraph {
         debug!("Compute the vertex to element connectivity");
@@ -594,6 +598,7 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
         Ok(())
     }
 
+   
     /// Compute an octree to locate elements
     #[must_use]
     pub fn compute_vert_tree(&self) -> DefaultPointIndex<D> {
@@ -889,6 +894,16 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
         let mut res = Self::empty();
         let (parent_vert_ids, parent_elem_ids, parent_face_ids) =
             res.add(self, elem_filter, |_| true, None);
+        
+        // let sub_mesh_elem_work_values = self.get_elem_work().unwrap();
+        // let mut sub_work_values = Vec::with_capacity(parent_elem_ids.len());
+        // // To parallelize
+        // for &parent_elem_idx in &parent_elem_ids {
+        // sub_work_values.push(sub_mesh_elem_work_values[parent_elem_idx as usize]);
+        // }
+        
+        // let _ = res.set_elem_work(sub_work_values);
+    
 
         SubSimplexMesh {
             mesh: res,
@@ -1220,6 +1235,18 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
     pub fn elem_gammas(&self) -> impl ExactSizeIterator<Item = f64> + '_ {
         self.gelems().map(|ge| ge.gamma())
     }
+
+    // Adapted from the formula inside A. Loseille ∗, F. Alauzet, V. Menier 
+    // "Unique cavity-based operator and hierarchical domain partitioning for fast parallel generation of anisotropic meshes".
+    pub fn work_eval(initial_density : f64, actual_density : f64, intersected_density : f64, vol: f64 )-> f64{
+        // Set up to csts and evaluate real coeff 
+        let insert_c : f64 = 1.0;
+        let collapse_c: f64  = 1.3;
+        let optimization_c : f64 = 3.3;
+        let work = vol * (insert_c * (intersected_density - initial_density) + collapse_c * (intersected_density - actual_density) + optimization_c * actual_density);
+        work
+    }
+    
 }
 
 impl SimplexMesh<2, Triangle> {
@@ -1293,7 +1320,51 @@ impl SimplexMesh<2, Triangle> {
         let end = self.n_elems();
         ([start, end], indices)
     }
+      pub fn work_evaluation_iso(&mut self, p_metrics_vec : &Vec<IsoMetric<2>>){
+        // Double check on how is the metric interpolated 
+        let mut implied_metrics = vec![IsoMetric::default(); self.n_elems() as usize];
+        
+        implied_metrics
+            .par_iter_mut()
+            .zip(self.par_gelems())
+            .for_each(|(m, ge)| *m = ge.get_average_isometric());
+
+        assert_eq!(implied_metrics.len(), p_metrics_vec.len());
+        let intersected_metrics : Vec<_> = implied_metrics
+                                    .iter()
+                                    .zip(p_metrics_vec.iter())
+                                    .map(|(implied_metrics_ref, p_m_ref)| {implied_metrics_ref.intersect(p_m_ref)})
+                                    .collect();
+                                
+        let d_initial_metric : Vec<_> = p_metrics_vec
+                                .iter()
+                                .map(|p_metric_ref| {p_metric_ref.density()})
+                                .collect();
+
+        let d_actual_metric: Vec<_> = implied_metrics
+                                .iter()
+                                .map(|implied_metrics_ref| {implied_metrics_ref.density()} )
+                                .collect();
+
+        let d_intersected : Vec<_> = intersected_metrics
+                                .iter()
+                                .map(|intersected_metric_ref| {intersected_metric_ref.density()})
+                                .collect();
+
+        let volumes = self.get_elem_volumes().unwrap().to_vec();
+        
+        let weights : Vec<_> = d_initial_metric
+                    .iter()
+                    .zip(d_actual_metric.iter())
+                    .zip(d_intersected.iter())
+                    .zip(volumes.iter())
+                    .map(|(((d_i_m,d_a_m),d_id),vol)| Self::work_eval(*d_i_m,*d_a_m,*d_id, *vol))
+                    .collect();
+
+        let _ = self.set_elem_work(weights);
+    }
 }
+
 
 impl SimplexMesh<3, Triangle> {
     pub fn add_quas<
@@ -1531,16 +1602,7 @@ impl SimplexMesh<3, Tetrahedron> {
         // Compute element volume
         weights 
     }
-    // Adapted from the formula inside A. Loseille ∗, F. Alauzet, V. Menier 
-    // "Unique cavity-based operator and hierarchical domain partitioning for fast parallel generation of anisotropic meshes".
-    pub fn work_eval(initial_density : f64, actual_density : f64, intersected_density : f64, vol: f64 )-> f64{
-        // Set up to csts and evaluate real coeff 
-        let insert_c : f64 = 1.0;
-        let collapse_c: f64  = 1.0;
-        let optimization_c : f64 = 1.0;
-        let work = vol * (insert_c * (intersected_density - initial_density) + collapse_c * (intersected_density - actual_density) + optimization_c * actual_density);
-        work
-    }
+   
     pub fn work_evaluation_aniso(&mut self, _p_metrics_vec : &Vec<AnisoMetric3d>){
         // Double check on how is the metric interpolated 
         let mut _implied_metrics = vec![AnisoMetric3d::default(); self.n_elems() as usize];

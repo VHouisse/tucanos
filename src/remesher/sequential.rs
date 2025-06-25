@@ -12,6 +12,8 @@ use crate::{
 use log::debug;
 use rustc_hash::FxHashMap;
 use sorted_vec::SortedVec;
+use std::fs::OpenOptions;
+use std::path::Path;
 use std::{cmp::Ordering, fs::File, io::Write, time::Instant};
 
 // /// Get edged indices such that they are sorted by increasing tag dimension and then by
@@ -643,24 +645,87 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
     pub fn qualities(&self) -> Vec<f64> {
         self.qualities_iter().collect()
     }
+fn log_cost_to_file(file_path: &Path, cost: f64) -> Result<()> {
+ 
+
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file_path)?;
+    // Écrire la valeur du coût suivie d'un retour à la ligne
+    writeln!(file, "{:e}", cost)?;
+
+    Ok(())
+}
+
+
+
+
+
 
     /// Perform a remeshing iteration
     pub fn remesh<G: Geometry<D>>(&mut self, params: &RemesherParams, geom: &G) -> Result<()> {
         debug!("Adapt the mesh");
         let now = Instant::now();
-
+       
         for step in &params.steps {
             match step {
                 RemeshingStep::Collapse(p) => {
-                    let _ = self.collapse(p, geom, params.debug)?;
+                    // Stats 
+                    let time_before_collapse = Instant::now();
+                    let elements_before_collapse = self.n_elems();
+                    
+                    let _n_attempted_collapse = self.collapse(p, geom, params.debug)?;
+                    
+                    let t = time_before_collapse.elapsed().as_secs_f64();
+                    let elements_after_collapse = self.n_elems();
+                    let cost_per_attempt = t/ _n_attempted_collapse as f64;
+
+                    println!("Number of Collapse Attemtped : {} in {} seconds, Cost per attempt : {}, Number of elements before :{} // After : {} ", _n_attempted_collapse, t, cost_per_attempt, elements_before_collapse, elements_after_collapse);
+                    let file_name = format!("Stats_Collapse.txt");
+                    let output_dir = Path::new("remesh_output");
+                    let output_path = output_dir.join(&file_name);
+                    let _ = Self::log_cost_to_file(&output_path, cost_per_attempt);
+
+
                 }
                 RemeshingStep::Split(p) => {
-                    let _ = self.split(p, geom, params.debug)?;
+
+                    // Stats pour évaluation coût Split 
+                    let time_before_split = Instant::now();
+                    let elements_before_split = self.n_elems();
+
+                    let n_attempted_split = self.split(p, geom, params.debug)?;
+
+                    let t = time_before_split.elapsed().as_secs_f64();
+                    let elements_after_split = self.n_elems();
+                    let cost_per_attempt = t/ n_attempted_split as f64; // Time/TotalSplitsAttempted  
+                    println!("Number of split Attemtped : {} in {} seconds, Cost per attempt : {}, Number of elements before :{} // After : {} ", n_attempted_split, t, cost_per_attempt, elements_before_split, elements_after_split);
+                    let file_name = format!("Stats_Split.txt");
+                    let output_dir = Path::new("remesh_output");
+                    let output_path = output_dir.join(&file_name);
+                    let _ = Self::log_cost_to_file(&output_path, cost_per_attempt);
+
+
                 }
                 RemeshingStep::Swap(p) => {
                     let _ = self.swap(p, geom, params.debug)?;
                 }
-                RemeshingStep::Smooth(p) => self.smooth(p, geom, params.debug)?,
+                RemeshingStep::Smooth(p) => {
+                            let time_before_smooth = Instant::now();
+                            let elements_before_smooth = self.n_elems();
+                            let _n_attempted_smooth = self.smooth(p, geom, params.debug)?;
+                            let t = time_before_smooth.elapsed().as_secs_f64();
+                            let elements_after_smooth = self.n_elems();
+                            let cost_per_attempt = t / _n_attempted_smooth as f64;
+
+                            println!("Number of smooth attempts: {} in {} seconds, Cost per attempt: {}, Number of elements before: {} // After: {} ", _n_attempted_smooth, t, cost_per_attempt, elements_before_smooth, elements_after_smooth);
+                            let file_name = format!("Stats_Smooth.txt");
+                            let output_dir = Path::new("remesh_output");
+                            let output_path = output_dir.join(&file_name);
+                            let _ = Self::log_cost_to_file(&output_path, cost_per_attempt);
+                            }
             }
         }
         debug!("Done in {}s", now.elapsed().as_secs_f32());

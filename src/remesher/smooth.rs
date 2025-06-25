@@ -354,17 +354,18 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         params: &SmoothParams,
         geom: &G,
         debug: bool,
-    ) -> Result<()> {
+    ) -> Result<u32> {
         debug!("Smooth vertices");
 
         // We modify the vertices while iterating over them so we must copy
         // the keys. Apart from going unsafe the only way to avoid this would be
         // to have one RefCell for each VtxInfo but copying self.verts is cheaper.
         let verts = self.verts.keys().copied().collect::<Vec<_>>();
-
+        let mut n_t_attempted = 0;
         let mut cavity = Cavity::new();
         for iter in 0..params.n_iter {
             let (n_fails, n_min, n_smooth) = self.smooth_iter(params, geom, &mut cavity, &verts);
+            n_t_attempted += n_fails+n_smooth;
             debug!(
                 "Iteration {}: {n_smooth} vertices moved, {n_fails} fails, {n_min} local minima",
                 iter + 1,
@@ -376,6 +377,6 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             self.check()?;
         }
 
-        Ok(())
+        Ok(n_t_attempted)
     }
 }

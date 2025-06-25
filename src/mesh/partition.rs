@@ -2,7 +2,7 @@ use crate::{
     mesh::{ordering::hilbert_indices, ConnectedComponents, ConnectedComponentsInfo, Elem, GElem, SimplexMesh}, Idx, Result, Tag
 };
 use log::{debug, warn};
-use std::{collections::{HashMap, HashSet}, fmt};
+use std::{collections::{HashMap, HashSet, VecDeque}, fmt};
 use rustc_hash::FxHashSet;
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
@@ -55,6 +55,7 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
         if n_parts == 1 {
             self.mut_etags().for_each(|t| *t = 1);
         } else {
+            
             let indices = hilbert_indices(self.bounding_box(), self.gelems().map(|ge| ge.center()));
 
             let m = self.n_elems() / n_parts + 1;
@@ -99,6 +100,7 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
                                 if current_partition_idx + 2 <= n_parts{
                                     current_partition_idx +=1;
                                 }
+                                continue;
                             }else{
                                 current_work_partition += elem_work;
                             }
@@ -115,11 +117,58 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
         
     }
 
+    pub fn breadth_first_search(&mut self, n_parts: Idx){
+
+        if n_parts == 1 {
+            self.mut_etags().for_each(|t| *t = 1);
+        }
+        let weights = self.get_elem_work().unwrap();
+        let total_work: f64 = weights.iter().sum();
+        let target_work_per_partition = total_work / (n_parts as f64);
+        let mut assigned_elements : HashSet<Idx> = HashSet::new();        
+        let mut partition : Vec<Tag> = vec![0;self.n_elems() as usize]; 
+        let mut current_partition_idx = 0;
+        let mut current_work_partition = 0.0;
+        let mut queue: VecDeque<Idx> = VecDeque::new();
+
+        // Make sure connectivity is computed !! 
+        let e2e = self.get_elem_to_elems().unwrap();
+        //Start with the first element of the Hilbert C
+        queue.push_front(0);
+
+        while let Some(current_elem_id) = queue.pop_front(){
+            let elem_work = weights[current_elem_id as usize];
+            if (current_work_partition + elem_work ) > target_work_per_partition{
+                current_work_partition = 0.0;
+                if current_partition_idx + 2 <= n_parts{
+                    current_partition_idx +=1;
+                }
+            }
+            partition[current_elem_id as usize] = current_partition_idx as Tag + 1; 
+            assigned_elements.insert(current_elem_id);
+
+            for &neighbor_elem_id in e2e.row(current_elem_id).iter() {
+                if !assigned_elements.contains(&neighbor_elem_id) {
+                    queue.push_back(neighbor_elem_id); 
+                }
+            }
+        }
+        
+        self.mut_etags()
+                .enumerate()
+                .for_each(|(i, t)| *t = partition[i] );    
+    }
+
+    
+    pub fn breadth_first_search_with_restart(&mut self, n_parts: Idx){
+        
+    }
+
     // Depending on the type of connectivity used 
     pub fn partition_correction(&mut self, n_parts: Idx){        
-        debug!("Correcting Connected Components"); 
+        debug!("Correcting Connected Components");
         let work = self.get_elem_work().unwrap();
-        let mut cc_infos: Vec<ConnectedComponentsInfo> = Vec::new();
+        let mut cc_infos: HashMap<(Tag,Idx),ConnectedComponentsInfo> = HashMap::new();
         for i_part in 0..n_parts{
             let mut smsh = self.extract_tag(i_part as Tag + 1);
             let e2e = smsh.mesh.compute_elem_to_elems(); 
@@ -127,8 +176,9 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
             let mut _n_cc = 1; 
             if let Ok(cc_graph) = cc{
                 _n_cc = cc_graph.tags().iter().clone().collect::<FxHashSet<_>>().len();
+                //println!("Partition n° : {} et nombre de composantes connexes {} ", i_part, n_cc);
                 let cc_tags = cc_graph.tags();
-                // Regroupe les éléments d'une composante connexe d'un subMeshpar un id
+                // Regroupe les éléments d'une composante connexe d'un subMesh par un id
                 let mut current_partition_cc : HashMap<Idx, Vec<Idx>> = HashMap::new();
                 for(sub_elem_idx, &cc_id) in cc_tags.iter().enumerate(){
                     let parent_elemnt_id  = smsh.parent_elem_ids[sub_elem_idx];
@@ -137,13 +187,14 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
 
                 let mut current_partition_cc_infos: Vec<ConnectedComponentsInfo> = Vec::new();
                 let mut max_work_per_cc = 0.0 ; 
-                let mut _primary_cc_id = Idx::MAX;
+                let mut _primary_cc_id = 999;
 
                 for (cc_id, elements_in_cc) in current_partition_cc{
                     let current_cc_work : f64 = elements_in_cc
                                                 .iter()
                                                 .map(|&elemn_parent_id| work[elemn_parent_id as usize])
                                                 .sum();
+
                     current_partition_cc_infos.push(ConnectedComponentsInfo{
                         cc_idx : cc_id,
                         elements : elements_in_cc,
@@ -152,27 +203,71 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
                         partition_id : i_part as Tag + 1
 
                     });
-                    
                     if current_cc_work > max_work_per_cc {
                         max_work_per_cc  = current_cc_work;
                        _primary_cc_id = cc_id;
-                    }
-
-                    for cc_info in &mut current_partition_cc_infos {
+                    }  
+                }
+                for cc_info in &mut current_partition_cc_infos {
                         if cc_info.cc_idx == _primary_cc_id {
                             cc_info.is_primary = true;
                         }
-                    }
-                    
-                }
-                cc_infos.extend(current_partition_cc_infos);
-    
+                        cc_infos.insert((i_part as Tag+1, cc_info.get_cc_idx()), cc_info.clone());
+                    }            
             }
-
         }
-
         // Fusion Part
+        // To do Parallelize
+        let mut element_links : HashMap<Idx, (Tag, Idx)> = HashMap::new();
+       for ((_, _), cc_info) in &cc_infos { cc_info.elements_iter()
+                                                   .for_each(|elem_id| {element_links.insert(elem_id, (cc_info.get_partition_id(), cc_info.get_cc_idx()));});}
+        
+        self.compute_elem_to_elems();
+        let e2e_tmesh = self.get_elem_to_elems().unwrap().clone();
 
+
+    let non_primary_cc_keys_to_process: Vec<(Tag, Idx)> = cc_infos.iter()
+                                                                  .filter(|&(_, info)| !info.get_is_primary())
+                                                                  .map(|(&key, _)| key)
+                                                                  .collect();
+        for np_cc_key in non_primary_cc_keys_to_process{
+            let Some(non_primary_cc_info) = cc_infos.remove(&np_cc_key) else {
+                continue; // La CC a déjà été fusionnée ou supprimée
+            };
+            let neigbors : Vec<Idx> = non_primary_cc_info.elements_iter()
+                                                .flat_map(|elem_id| {e2e_tmesh.row(elem_id).iter().copied()})
+                                                .collect();
+
+            let cc_key_neighbors: Vec<(Tag, Idx)> = neigbors.iter()
+                                                        .flat_map(|&neighbor_id| element_links.get(&neighbor_id).copied()) // <- Correction ici
+                                                        .collect();
+
+            let cc_neighbor: Vec<ConnectedComponentsInfo> = cc_key_neighbors.iter()
+                                                                            .filter_map(|&(cc_p_tag, cc_idx)| {cc_infos.get(&(cc_p_tag, cc_idx)).cloned()})
+                                                                            .collect();
+            
+            if let Some(chosen_primary_cc_info) = cc_neighbor.iter() // Itérer sur les références aux CCs voisines
+                                                                .filter(|cc_info| cc_info.get_is_primary()) // Filtrer directement par la méthode get_is_primary()
+                                                                .min_by(|a, b| a.total_work.partial_cmp(&b.total_work).unwrap_or(std::cmp::Ordering::Equal))
+                                                                {
+                                                                    let target_partition_id = chosen_primary_cc_info.get_partition_id();
+                                                                    let target_cc_id = chosen_primary_cc_info.get_cc_idx();
+                                                                    let target_primary_key = (target_partition_id, target_cc_id);
+
+                                                                    let elements_to_move_ids: Vec<Idx> = non_primary_cc_info.elements_iter().collect();
+                                                                    let etags_ref_mut = self.get_etags_mut();
+
+                                                                    for &elem_id in &elements_to_move_ids{ etags_ref_mut[elem_id as usize] = target_partition_id}
+
+                                                                    // Update Changes
+                                                                    let target_primary_cc_entry = cc_infos.get_mut(&target_primary_key)
+                                                                        .expect("Target primary CC info not found for update.");
+
+                                                                    target_primary_cc_entry.elements.extend_from_slice(&non_primary_cc_info.elements);
+                                                                    target_primary_cc_entry.total_work += non_primary_cc_info.total_work;
+
+                                                                }
+            }
       
     }
 

@@ -71,6 +71,10 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
         let mut n_iter = 0;
         let mut cavity = Cavity::new();
+
+
+        let mut _total_collapse_attempted = 0; 
+
         loop {
             n_iter += 1;
 
@@ -82,6 +86,8 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             let mut n_fails = 0;
             for i_edge in indices {
                 let edg = edges[i_edge];
+
+                _total_collapse_attempted += 1;
                 if dims_and_lengths[i_edge].1 < params.l {
                     trace!("Try to collapse edgs {edg:?}");
                     let (mut i0, mut i1) = edg.into();
@@ -197,7 +203,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                 if debug {
                     self.check().unwrap();
                 }
-                return Ok(n_iter);
+                return Ok(_total_collapse_attempted); //TODO remplace by n_iter and delete total_collapse_attempted
             }
         }
     }

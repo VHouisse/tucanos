@@ -252,9 +252,9 @@ impl fmt::Display for ConnectedComponentsInfo {
         // Voici un exemple qui affiche tous les champs de manière lisible.
         write!(
             f,
-            "ConnectedComponentInfo {{ cc_idx: {}, elements: {}, total_work: {:.2}, is_primary: {}, partition_id: {} }}",
+            " ConnectedComponentInfo {{ cc_idx: {}, elements: {}, total_work: {:.2}, is_primary: {}, partition_id: {} }} ",
             self.cc_idx,
-            self.elements[0],
+            self.elements.len(),
             self.total_work,
             self.is_primary,
             self.partition_id
@@ -262,6 +262,36 @@ impl fmt::Display for ConnectedComponentsInfo {
     }
 }
 
+impl Clone for ConnectedComponentsInfo {
+    fn clone(&self) -> Self {
+        Self {
+            cc_idx: self.cc_idx,
+            elements: self.elements.clone(), // Clone le Vec<Idx>
+            total_work: self.total_work,
+            is_primary: self.is_primary,
+            partition_id: self.partition_id,
+        }
+    }
+}
+
+impl ConnectedComponentsInfo{
+    pub fn get_cc_idx(&self) -> Idx{
+        self.cc_idx 
+    }
+
+    pub fn get_is_primary(&self)->bool{
+        self.is_primary
+    }
+    pub fn elements_iter(&self) -> impl Iterator<Item = Idx> + '_ {
+        self.elements.iter().copied()
+    }
+    pub fn get_partition_id(&self)->Tag{
+        self.partition_id
+    }
+    pub fn get_total_work(&self)->f64{
+        self.total_work
+    }
+}
 
 
 #[cfg(test)]

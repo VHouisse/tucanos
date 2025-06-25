@@ -1,7 +1,5 @@
 use crate::{
-    Idx,
-    mesh::Point,
-    metric::{AnisoMetric, AnisoMetric2d, AnisoMetric3d, Metric},
+    mesh::Point, metric::{AnisoMetric, AnisoMetric2d, AnisoMetric3d, IsoMetric, Metric}, Idx
 };
 use nalgebra::{Matrix2, Matrix3, Matrix4, Vector1, Vector2, Vector3, Vector4};
 use std::fmt::Debug;
@@ -408,7 +406,24 @@ impl<const D: usize, M: Metric<D>> GTriangle<D, M> {
             n.norm()
         }
     }
+   
+
+
+
 }
+impl<const D: usize> GTriangle<D, IsoMetric<D>>
+{
+    pub fn get_average_isometric(&self)-> IsoMetric<D>{
+        let mut product_h = 1.0;
+        for m in self.metrics.iter(){
+            product_h *= m.h();
+        }
+        let g_mean_h = product_h.powf(1.0/self.metrics.len()  as f64);
+        let iso_metric = IsoMetric::<D>::from(g_mean_h);
+        iso_metric
+    }
+}
+
 
 impl<const D: usize, M: Metric<D>> GElem<D, M> for GTriangle<D, M> {
     type Face = GEdge<D, M>;

@@ -69,6 +69,8 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
         let mut n_iter = 0;
         let mut cavity = Cavity::new();
+
+        let mut total_splits_attempted = 0; 
         loop {
             n_iter += 1;
 
@@ -87,6 +89,9 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             for i_edge in indices {
                 let edg = edges[i_edge];
                 let length = dims_and_lengths[i_edge].1;
+
+                total_splits_attempted += 1;
+
                 if length > params.l {
                     trace!("Try to split edge {edg:?}, l = {length}");
                     cavity.init_from_edge(edg, self);
@@ -189,7 +194,6 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                     }
                 }
             }
-
             debug!(
                 "Iteration {n_iter}: {n_splits} edges split ({n_fails} failed - {n_removed} elements removed)"
             );
@@ -200,8 +204,8 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                 if debug {
                     self.check().unwrap();
                 }
-                return Ok(n_iter);
+                return Ok(total_splits_attempted); //TODO remplace by n_iter and delete total_splits_attempted
             }
-        }
+        }    
     }
 }
