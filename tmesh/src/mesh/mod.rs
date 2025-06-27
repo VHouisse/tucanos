@@ -943,6 +943,7 @@ where
     }
 
     /// Export the mesh to a `.meshb` file
+    #[allow(clippy::unnecessary_fallible_conversions)]
     fn write_meshb(&self, file_name: &str) -> Result<()> {
         let mut writer = MeshbWriter::new(file_name, 4, D as u8)?;
 
@@ -962,7 +963,7 @@ where
                     tmp.copy_from_slice(x.as_slice());
                     tmp
                 }),
-                self.etags().map(std::convert::Into::into),
+                self.etags().map(|x| x.try_into().unwrap()),
             )?,
             3 => writer.write_triangles(
                 self.elems().map(|x| {
@@ -970,7 +971,7 @@ where
                     tmp.copy_from_slice(x.as_slice());
                     tmp
                 }),
-                self.etags().map(std::convert::Into::into),
+                self.etags().map(|x| x.try_into().unwrap()),
             )?,
             2 => writer.write_edges(
                 self.elems().map(|x| {
@@ -978,7 +979,7 @@ where
                     tmp.copy_from_slice(x.as_slice());
                     tmp
                 }),
-                self.etags().map(std::convert::Into::into),
+                self.etags().map(|x| x.try_into().unwrap()),
             )?,
             _ => unimplemented!(),
         }
@@ -990,7 +991,7 @@ where
                     tmp.copy_from_slice(x.as_slice());
                     tmp
                 }),
-                self.ftags().map(std::convert::Into::into),
+                self.ftags().map(|x| x.try_into().unwrap()),
             )?,
             2 => writer.write_edges(
                 self.faces().map(|x| {
@@ -998,7 +999,7 @@ where
                     tmp.copy_from_slice(x.as_slice());
                     tmp
                 }),
-                self.ftags().map(std::convert::Into::into),
+                self.ftags().map(|x| x.try_into().unwrap()),
             )?,
             _ => unimplemented!(),
         }

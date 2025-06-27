@@ -300,6 +300,39 @@ impl DataArray {
         }
     }
 
+    #[allow(dead_code)]
+    fn new_i32<I: Iterator<Item = i32>>(
+        name: &str,
+        number_of_components: usize,
+        len: usize,
+        data: I,
+        encoding: VTUEncoding,
+    ) -> Self {
+        use std::fmt::Write;
+        let (format, data) = match encoding {
+            VTUEncoding::Ascii => (
+                "ascii".to_string(),
+                data.fold(String::new(), |mut output, b| {
+                    let _ = write!(output, "{b} ");
+                    output
+                }),
+            ),
+            VTUEncoding::Binary => (
+                "binary".to_string(),
+                encode::<i32, _>(len, data.flat_map(i32::to_le_bytes)),
+            ),
+        };
+
+        Self {
+            data_type: "Int32".to_string(),
+            name: name.to_string(),
+            format,
+            number_of_components,
+            data,
+        }
+    }
+
+    #[allow(dead_code)]
     fn new_i16<I: Iterator<Item = i16>>(
         name: &str,
         number_of_components: usize,
@@ -606,6 +639,11 @@ struct CellData {
 
 impl CellData {
     fn from_etags<I: ExactSizeIterator<Item = Tag>>(data: I, encoding: VTUEncoding) -> Self {
+        #[cfg(feature = "64bit-tags")]
+        let tags = DataArray::new_i64("tags", 1, data.len(), data, encoding);
+        #[cfg(feature = "32bit-tags")]
+        let tags = DataArray::new_i32("tags", 1, data.len(), data, encoding);
+        #[cfg(not(any(feature = "32bit-tags", feature = "64bit-tags")))]
         let tags = DataArray::new_i16("tags", 1, data.len(), data, encoding);
 
         Self {

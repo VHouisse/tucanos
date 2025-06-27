@@ -22,7 +22,7 @@ tmesh = {path = "../tmesh"}
 
 [features]
 32bit-tags = ["tmesh/32bit-tags"]
-64bit-tags = ["tmesh/32bit-tags"]
+64bit-tags = ["tmesh/64bit-tags"]
 metis = ["tmesh/metis"]
 
 [[example]]
