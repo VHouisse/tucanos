@@ -3,11 +3,11 @@ use std::{path::Path, process::Command, time::Instant};
 #[cfg(feature = "metis")]
 use tmesh::mesh::partition::{MetisKWay, MetisPartitioner, MetisRecursive};
 use tmesh::{
-    mesh::{
-        partition::{HilbertPartitioner, KMeansPartitioner3d, RCMPartitioner},
-        BoundaryMesh3d, Mesh, Mesh3d,
-    },
     Result,
+    mesh::{
+        BoundaryMesh3d, Mesh, Mesh3d,
+        partition::{HilbertPartitioner, KMeansPartitioner3d, RCMPartitioner},
+    },
 };
 
 /// .geo file to generate the input mesh with gmsh:
@@ -27,6 +27,7 @@ Physical Volume("E", 16) = {1};
 
 "#;
 
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     let fname = "geom3d.mesh";
     let fname = Path::new(fname);
@@ -113,7 +114,7 @@ fn main() -> Result<()> {
         let start = Instant::now();
         let (quality, imbalance) =
             msh.partition::<MetisPartitioner<MetisRecursive>>(n_parts, None)?;
-        let t = Instant::now() - start;
+        let t = start.elapsed();
         println!(
             "MetisPartitioner<MetisRecursive>: {:.2e}s, quality={:.2e}, imbalance={:.2e}",
             t.as_secs_f64(),
@@ -123,13 +124,13 @@ fn main() -> Result<()> {
         for i in 0..n_parts {
             let pmesh: Mesh3d = msh.get_partition(i);
             let cc = pmesh.vertex_to_vertices().connected_components()?;
-            let n_cc = cc.iter().cloned().max().unwrap_or(0) + 1;
+            let n_cc = cc.iter().copied().max().unwrap_or(0) + 1;
             println!("  part {i}: {n_cc} components");
         }
 
         let start = Instant::now();
         let (quality, imbalance) = msh.partition::<MetisPartitioner<MetisKWay>>(n_parts, None)?;
-        let t = Instant::now() - start;
+        let t = start.elapsed();
         println!(
             "MetisPartitioner<MetisKWay>: {:.2e}s, quality={:.2e}, imbalance={:.2e}",
             t.as_secs_f64(),
@@ -139,7 +140,7 @@ fn main() -> Result<()> {
         for i in 0..n_parts {
             let pmesh: Mesh3d = msh.get_partition(i);
             let cc = pmesh.vertex_to_vertices().connected_components()?;
-            let n_cc = cc.iter().cloned().max().unwrap_or(0) + 1;
+            let n_cc = cc.iter().copied().max().unwrap_or(0) + 1;
             println!("  part {i}: {n_cc} components");
         }
     }
