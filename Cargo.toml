@@ -37,6 +37,9 @@ unreadable_literal = "allow"
 # TODO: to remove
 cognitive_complexity = "allow"
 too_long_first_doc_paragraph = "allow"
+ptr_as_ptr = "allow"
+borrow_as_ptr = "allow"
+ref_as_ptr = "allow"
 
 [profile.release]
 debug = 1
