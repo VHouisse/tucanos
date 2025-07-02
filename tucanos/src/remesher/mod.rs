@@ -9,7 +9,7 @@ mod stats;
 mod swap;
 
 pub use collapse::CollapseParams;
-pub use cost_estimator::ElementCostEstimator;
+pub use cost_estimator::{ElementCostEstimator, NoCostEstimator};
 pub use parallel::{ParallelRemesher, ParallelRemesherParams, ParallelRemeshingInfo};
 pub use sequential::{Remesher, RemesherParams, RemeshingStep};
 pub use smooth::{SmoothParams, SmoothingMethod};

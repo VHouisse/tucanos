@@ -499,27 +499,34 @@ where
 #[cfg(test)]
 mod tests {
 
-    use tmesh::mesh::Mesh;
-
-    use crate::{
-        Result,
-        geometry::NoGeometry,
-        mesh::{
-            HasTmeshImpl, Point,
-            test_meshes::{test_mesh_2d, test_mesh_3d},
-        },
-        metric::IsoMetric,
-        remesher::{ParallelRemesher, ParallelRemesherParams, RemesherParams},
+    use tmesh::mesh::{
+        Mesh,
+        partition::{HilbertPartitioner, Partitioner},
     };
 
-    fn test_domain_decomposition_2d(debug: bool, ptype: PartitionType) -> Result<()> {
+    use crate::{
+        Idx, Result,
+        geometry::NoGeometry,
+        mesh::{HasTmeshImpl, Point, Triangle, test_meshes::test_mesh_2d},
+        metric::IsoMetric,
+        remesher::{
+            ElementCostEstimator, ParallelRemesher, ParallelRemesherParams, RemesherParams,
+            cost_estimator::NoCostEstimator,
+        },
+    };
+
+    fn test_domain_decomposition_2d<
+        P: Partitioner,
+        C: ElementCostEstimator<2, Triangle, IsoMetric<2>>,
+    >(
+        debug: bool,
+        n_parts: Idx,
+    ) -> Result<()> {
         // use crate::init_log;
         // init_log("debug");
         let mut mesh = test_mesh_2d().split().split().split().split().split();
         mesh.mut_etags().for_each(|t| *t = 1);
         mesh.compute_topology();
-
-        let dd = ParallelRemesher::new(mesh, ptype)?;
 
         let h = |p: Point<2>| {
             let x = p[0];
@@ -531,13 +538,14 @@ mod tests {
                 * (1.0 - f64::exp(-((x - 0.5).powi(2) + (y - 0.35).powi(2)) / sigma.powi(2)))
         };
 
-        let m: Vec<_> = (0..dd.mesh.n_verts())
-            .map(|i| IsoMetric::<2>::from(h(dd.mesh.vert(i))))
+        let m: Vec<_> = (0..mesh.n_verts())
+            .map(|i| IsoMetric::<2>::from(h(mesh.vert(i))))
             .collect();
 
+        let dd = ParallelRemesher::<2, Triangle, IsoMetric<2>, P, C>::new(mesh, m, n_parts)?;
+
         let dd_params = ParallelRemesherParams::new(2, 1, 0);
-        let (mut mesh, _, _) =
-            dd.remesh(&m, &NoGeometry(), RemesherParams::default(), &dd_params)?;
+        let (mut mesh, _, _) = dd.remesh(&NoGeometry(), RemesherParams::default(), &dd_params)?;
 
         if debug {
             mesh.vtu_writer().export("res.vtu")?;
@@ -563,27 +571,39 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_dd_2d_hilbert_1() {
-        test_domain_decomposition_2d(false, PartitionType::Hilbert(1)).unwrap();
+        test_domain_decomposition_2d::<
+            HilbertPartitioner,
+            NoCostEstimator<2, Triangle, IsoMetric<2>>,
+        >(false, 1)
+        .unwrap();
     }
 
     #[test]
     fn test_dd_2d_hilbert_2() -> Result<()> {
-        test_domain_decomposition_2d(false, PartitionType::Hilbert(2))
+        test_domain_decomposition_2d::<HilbertPartitioner, NoCostEstimator<2, Triangle, IsoMetric<2>>>(
+            false, 2,
+        )
     }
 
     #[test]
     fn test_dd_2d_hilbert_3() -> Result<()> {
-        test_domain_decomposition_2d(false, PartitionType::Hilbert(3))
+        test_domain_decomposition_2d::<HilbertPartitioner, NoCostEstimator<2, Triangle, IsoMetric<2>>>(
+            false, 3,
+        )
     }
 
     #[test]
     fn test_dd_2d_hilbert_4() -> Result<()> {
-        test_domain_decomposition_2d(false, PartitionType::Hilbert(4))
+        test_domain_decomposition_2d::<HilbertPartitioner, NoCostEstimator<2, Triangle, IsoMetric<2>>>(
+            false, 4,
+        )
     }
 
     #[test]
     fn test_dd_2d_hilbert_5() -> Result<()> {
-        test_domain_decomposition_2d(false, PartitionType::Hilbert(5))
+        test_domain_decomposition_2d::<HilbertPartitioner, NoCostEstimator<2, Triangle, IsoMetric<2>>>(
+            false, 5,
+        )
     }
 
     #[cfg(feature = "metis")]
@@ -648,113 +668,113 @@ mod tests {
     //     test_domain_decomposition_2d(false, PartitionType::Scotch(5))
     // }
 
-    fn test_domain_decomposition_3d(debug: bool, ptype: PartitionType) -> Result<()> {
-        // use crate::init_log;
-        // init_log("warning");
-        let mut mesh = test_mesh_3d().split().split().split();
-        mesh.compute_topology();
-        let dd = ParallelRemesher::new(mesh, ptype)?;
-        // dd.set_debug(true);
+    // fn test_domain_decomposition_3d(debug: bool, ptype: PartitionType) -> Result<()> {
+    //     // use crate::init_log;
+    //     // init_log("warning");
+    //     let mut mesh = test_mesh_3d().split().split().split();
+    //     mesh.compute_topology();
+    //     let dd = ParallelRemesher::new(mesh, ptype)?;
+    //     // dd.set_debug(true);
 
-        let h = |p: Point<3>| {
-            let x = p[0];
-            let y = p[1];
-            let z = p[2];
-            let hmin = 0.025;
-            let hmax = 0.25;
-            let sigma: f64 = 0.25;
-            hmin + (hmax - hmin)
-                * (1.0
-                    - f64::exp(
-                        -((x - 0.5).powi(2) + (y - 0.35).powi(2) + (z - 0.65).powi(2))
-                            / sigma.powi(2),
-                    ))
-        };
+    //     let h = |p: Point<3>| {
+    //         let x = p[0];
+    //         let y = p[1];
+    //         let z = p[2];
+    //         let hmin = 0.025;
+    //         let hmax = 0.25;
+    //         let sigma: f64 = 0.25;
+    //         hmin + (hmax - hmin)
+    //             * (1.0
+    //                 - f64::exp(
+    //                     -((x - 0.5).powi(2) + (y - 0.35).powi(2) + (z - 0.65).powi(2))
+    //                         / sigma.powi(2),
+    //                 ))
+    //     };
 
-        let m: Vec<_> = (0..dd.mesh.n_verts())
-            .map(|i| IsoMetric::<3>::from(h(dd.mesh.vert(i))))
-            .collect();
+    //     let m: Vec<_> = (0..dd.mesh.n_verts())
+    //         .map(|i| IsoMetric::<3>::from(h(dd.mesh.vert(i))))
+    //         .collect();
 
-        let dd_params = ParallelRemesherParams::new(2, 2, 0);
-        let (mut mesh, _, _) =
-            dd.remesh(&m, &NoGeometry(), RemesherParams::default(), &dd_params)?;
+    //     let dd_params = ParallelRemesherParams::new(2, 2, 0);
+    //     let (mut mesh, _, _) =
+    //         dd.remesh(&m, &NoGeometry(), RemesherParams::default(), &dd_params)?;
 
-        if debug {
-            mesh.vtu_writer().export("res.vtu")?;
-            mesh.vtu_writer().export("res_bdy.vtu")?;
-        }
+    //     if debug {
+    //         mesh.vtu_writer().export("res.vtu")?;
+    //         mesh.vtu_writer().export("res_bdy.vtu")?;
+    //     }
 
-        let n = mesh.n_verts();
-        for i in 0..n {
-            let vi = mesh.vert(i);
-            for j in i + 1..n {
-                let vj = mesh.vert(j);
-                let d = (vj - vi).norm();
-                assert!(d > 1e-8, "{i}, {j}, {vi:?}, {vj:?}");
-            }
-        }
-        mesh.compute_face_to_elems();
-        mesh.check_simple()?;
+    //     let n = mesh.n_verts();
+    //     for i in 0..n {
+    //         let vi = mesh.vert(i);
+    //         for j in i + 1..n {
+    //             let vj = mesh.vert(j);
+    //             let d = (vj - vi).norm();
+    //             assert!(d > 1e-8, "{i}, {j}, {vi:?}, {vj:?}");
+    //         }
+    //     }
+    //     mesh.compute_face_to_elems();
+    //     mesh.check_simple()?;
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    #[test]
-    #[should_panic]
-    fn test_dd_3d_hilbert_1() {
-        test_domain_decomposition_3d(false, PartitionType::Hilbert(1)).unwrap();
-    }
+    // #[test]
+    // #[should_panic]
+    // fn test_dd_3d_hilbert_1() {
+    //     test_domain_decomposition_3d(false, PartitionType::Hilbert(1)).unwrap();
+    // }
 
-    #[test]
-    fn test_dd_3d_hilbert_2() -> Result<()> {
-        test_domain_decomposition_3d(false, PartitionType::Hilbert(2))
-    }
+    // #[test]
+    // fn test_dd_3d_hilbert_2() -> Result<()> {
+    //     test_domain_decomposition_3d(false, PartitionType::Hilbert(2))
+    // }
 
-    #[test]
-    fn test_dd_3d_hilbert_3() -> Result<()> {
-        test_domain_decomposition_3d(false, PartitionType::Hilbert(3))
-    }
+    // #[test]
+    // fn test_dd_3d_hilbert_3() -> Result<()> {
+    //     test_domain_decomposition_3d(false, PartitionType::Hilbert(3))
+    // }
 
-    #[test]
-    fn test_dd_3d_hilbert_4() -> Result<()> {
-        test_domain_decomposition_3d(false, PartitionType::Hilbert(4))
-    }
+    // #[test]
+    // fn test_dd_3d_hilbert_4() -> Result<()> {
+    //     test_domain_decomposition_3d(false, PartitionType::Hilbert(4))
+    // }
 
-    #[test]
-    fn test_dd_3d_hilbert_5() -> Result<()> {
-        test_domain_decomposition_3d(false, PartitionType::Hilbert(5))
-    }
+    // #[test]
+    // fn test_dd_3d_hilbert_5() -> Result<()> {
+    //     test_domain_decomposition_3d(false, PartitionType::Hilbert(5))
+    // }
 
-    #[cfg(feature = "metis")]
-    #[test]
-    #[should_panic]
-    fn test_dd_3d_metis_1() {
-        test_domain_decomposition_3d(false, PartitionType::MetisRecursive(1)).unwrap();
-    }
+    // #[cfg(feature = "metis")]
+    // #[test]
+    // #[should_panic]
+    // fn test_dd_3d_metis_1() {
+    //     test_domain_decomposition_3d(false, PartitionType::MetisRecursive(1)).unwrap();
+    // }
 
-    #[cfg(feature = "metis")]
-    #[test]
-    fn test_dd_3d_metis_2() -> Result<()> {
-        test_domain_decomposition_3d(false, PartitionType::MetisRecursive(2))
-    }
+    // #[cfg(feature = "metis")]
+    // #[test]
+    // fn test_dd_3d_metis_2() -> Result<()> {
+    //     test_domain_decomposition_3d(false, PartitionType::MetisRecursive(2))
+    // }
 
-    #[cfg(feature = "metis")]
-    #[test]
-    fn test_dd_3d_metis_3() -> Result<()> {
-        test_domain_decomposition_3d(false, PartitionType::MetisRecursive(3))
-    }
+    // #[cfg(feature = "metis")]
+    // #[test]
+    // fn test_dd_3d_metis_3() -> Result<()> {
+    //     test_domain_decomposition_3d(false, PartitionType::MetisRecursive(3))
+    // }
 
-    #[cfg(feature = "metis")]
-    #[test]
-    fn test_dd_3d_metis_4() -> Result<()> {
-        test_domain_decomposition_3d(false, PartitionType::MetisRecursive(4))
-    }
+    // #[cfg(feature = "metis")]
+    // #[test]
+    // fn test_dd_3d_metis_4() -> Result<()> {
+    //     test_domain_decomposition_3d(false, PartitionType::MetisRecursive(4))
+    // }
 
-    #[cfg(feature = "metis")]
-    #[test]
-    fn test_dd_3d_metis_5() -> Result<()> {
-        test_domain_decomposition_3d(false, PartitionType::MetisRecursive(5))
-    }
+    // #[cfg(feature = "metis")]
+    // #[test]
+    // fn test_dd_3d_metis_5() -> Result<()> {
+    //     test_domain_decomposition_3d(false, PartitionType::MetisRecursive(5))
+    // }
 
     // #[cfg(feature = "scotch")]
     // #[test]

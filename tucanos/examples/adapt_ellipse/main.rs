@@ -5,13 +5,15 @@ use env_logger::Env;
 use nalgebra::SMatrix;
 use rustc_hash::FxHashMap;
 use std::{path::Path, process::Command, time::Instant};
-use tmesh::mesh::Mesh;
+use tmesh::mesh::{Mesh, partition::HilbertBallPartitioner};
 use tucanos::{
     Result, Tag, TopoTag,
     geometry::Geometry,
-    mesh::{GElem, HasTmeshImpl, PartitionType, Point, SimplexMesh, Tetrahedron, Topology},
+    mesh::{GElem, HasTmeshImpl, Point, SimplexMesh, Tetrahedron, Topology},
     metric::{AnisoMetric3d, Metric},
-    remesher::{ParallelRemesher, ParallelRemesherParams, Remesher, RemesherParams},
+    remesher::{
+        NoCostEstimator, ParallelRemesher, ParallelRemesherParams, Remesher, RemesherParams,
+    },
 };
 
 pub fn init_log(level: &str) {
@@ -314,10 +316,13 @@ fn main() -> Result<()> {
         remesher.check()?;
         remesher.to_mesh(true)
     } else {
-        let mut dd = ParallelRemesher::new(mesh, PartitionType::MetisRecursive(n_part))?;
+        let mut dd =
+            ParallelRemesher::<3, _, _, HilbertBallPartitioner, NoCostEstimator<3, _, _>>::new(
+                mesh, metric, n_part,
+            )?;
         dd.set_debug(debug);
         let dd_params = ParallelRemesherParams::new(2, 2, 10000);
-        let (mesh, stats, _) = dd.remesh(&metric, &geom, params, &dd_params)?;
+        let (mesh, stats, _) = dd.remesh(&geom, params, &dd_params)?;
         stats.print_summary();
         mesh
     };
