@@ -15,7 +15,9 @@ use rayon::{
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{HashMap, hash_map::Entry};
 use std::marker::PhantomData;
-use tmesh::{graph::CSRGraph, io::VTUFile, spatialindex::ObjectIndex};
+use tmesh::{
+    graph::CSRGraph, io::VTUFile, mesh::partition::Partitioner, spatialindex::ObjectIndex,
+};
 
 /// Renumber the vertices in order to have contininuous indices, and return he map from old to nex indices
 #[must_use]
@@ -908,22 +910,16 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug)]
-pub enum PartitionType {
-    Hilbert(usize),
-    // Scotch(Idx),
-    MetisRecursive(usize),
-    MetisKWay(usize),
-    None,
-}
-
 pub trait HasTmeshImpl<const D: usize, E: Elem> {
     fn elem_tree(&self) -> ObjectIndex<D>;
 
     fn vtu_writer(&self) -> VTUFile;
 
-    fn partition_simple(&mut self, ptype: PartitionType) -> Result<(f64, f64)>;
+    fn partition_elems<P: Partitioner>(
+        &mut self,
+        n_parts: Idx,
+        weights: Option<Vec<f64>>,
+    ) -> Result<(f64, f64)>;
 
     fn boundary_flag(&self) -> Vec<bool>;
 

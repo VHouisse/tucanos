@@ -6,7 +6,7 @@ use coupe::Partition;
 use std::marker::PhantomData;
 
 /// Mesh partitioners
-pub trait Partitioner: Sized {
+pub trait Partitioner: Sized + Send + Sync {
     /// Create a new mesh partitionner to partition `msh` into `n_parts`
     /// Element weights can optionally be provided
     fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
@@ -89,9 +89,9 @@ pub trait Partitioner: Sized {
                     }
                 }
                 let i_max_cc = argmax(&cc_weights).unwrap();
-                for i_cc in 0..n_cc {
+                for (i_cc, n_faces) in n_faces.iter().enumerate() {
                     if i_cc != i_max_cc {
-                        let i_new_part = argmax(&n_faces[i_cc]).unwrap();
+                        let i_new_part = argmax(n_faces).unwrap();
                         for (i, &j) in elem_ids.iter().enumerate() {
                             if cc[i] == i_cc {
                                 part[j] = i_new_part;

@@ -1,16 +1,13 @@
 use rayon::iter::{IndexedParallelIterator, ParallelIterator};
-#[cfg(feature = "metis")]
-use tmesh::mesh::partition::{MetisKWay, MetisPartitioner, MetisRecursive};
 use tmesh::{
     io::{VTUEncoding, VTUFile},
-    mesh::{Cell, Face, Mesh, partition::HilbertPartitioner},
+    mesh::{Cell, Face, Mesh, partition::Partitioner},
     minimeshb::{reader::MeshbReader, writer::MeshbWriter},
     spatialindex::ObjectIndex,
 };
 
 use super::{
-    Edge, Elem, HasTmeshImpl, PartitionType, Point, SimplexMesh, SubSimplexMesh, Tetrahedron,
-    Triangle, Vertex,
+    Edge, Elem, HasTmeshImpl, Point, SimplexMesh, SubSimplexMesh, Tetrahedron, Triangle, Vertex,
 };
 use crate::{Idx, Result, Tag};
 
@@ -211,24 +208,16 @@ macro_rules! impl_mesh {
                 VTUFile::from_mesh(self, VTUEncoding::Binary)
             }
 
-            fn partition_simple(&mut self, ptype: PartitionType) -> Result<(f64, f64)> {
-                match ptype {
-                    PartitionType::Hilbert(n) => self.partition::<HilbertPartitioner>(n, None),
-                    // PartitionType::Scotch(n) => self.partition_scotch(n),
-                    #[cfg(not(feature = "metis"))]
-                    PartitionType::MetisRecursive(n) => panic!("MetisRecursive({n}) not available"),
-                    #[cfg(feature = "metis")]
-                    PartitionType::MetisRecursive(n) => {
-                        self.partition::<MetisPartitioner<MetisRecursive>>(n, None)
-                    }
-                    #[cfg(not(feature = "metis"))]
-                    PartitionType::MetisKWay(n) => panic!("MetisKWay({n}) not available"),
-                    #[cfg(feature = "metis")]
-                    PartitionType::MetisKWay(n) => {
-                        self.partition::<MetisPartitioner<MetisKWay>>(n, None)
-                    }
-                    PartitionType::None => unreachable!(),
-                }
+            fn partition_elems<P: Partitioner>(
+                &mut self,
+                n_parts: Idx,
+                weights: Option<Vec<f64>>,
+            ) -> Result<(f64, f64)> {
+                <Self as Mesh<$dim, $cell_dim, $face_dim>>::partition::<P>(
+                    self,
+                    n_parts as usize,
+                    weights,
+                )
             }
 
             fn boundary_flag(&self) -> Vec<bool> {
@@ -370,13 +359,13 @@ mod tests {
     use crate::{
         Result,
         mesh::{
-            Elem, HasTmeshImpl, PartitionType, Point, SimplexMesh, Tetrahedron, Triangle,
+            Elem, HasTmeshImpl, Point, SimplexMesh, Tetrahedron, Triangle,
             test_meshes::{test_mesh_2d, test_mesh_3d},
         },
         metric::{AnisoMetric2d, AnisoMetric3d, Metric},
     };
     use tempfile::NamedTempFile;
-    use tmesh::mesh::Mesh;
+    use tmesh::mesh::{Mesh, partition::HilbertPartitioner};
 
     #[test]
     fn test_2d_ascii() -> Result<()> {
@@ -654,7 +643,7 @@ mod tests {
     #[test]
     fn test_partition_hilbert_2d() -> Result<()> {
         let mut mesh = test_mesh_2d().split().split().split().split().split();
-        let (q, _) = mesh.partition_simple(PartitionType::Hilbert(4))?;
+        let (q, _) = mesh.partition_elems::<HilbertPartitioner>(4, None)?;
 
         assert!(q < 0.025, "failed, q = {q}");
 
@@ -664,7 +653,7 @@ mod tests {
     #[test]
     fn test_partition_hilbert_3d() -> Result<()> {
         let mut mesh = test_mesh_3d().split().split().split().split();
-        let (q, _) = mesh.partition_simple(PartitionType::Hilbert(4))?;
+        let (q, _) = mesh.partition_elems::<HilbertPartitioner>(4, None)?;
 
         assert!(q < 0.027, "failed, q = {q}");
 

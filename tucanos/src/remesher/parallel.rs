@@ -1,7 +1,7 @@
 use crate::{
     Idx, Result, Tag,
     geometry::Geometry,
-    mesh::{Elem, HasTmeshImpl, PartitionType, SimplexMesh, SubSimplexMesh},
+    mesh::{Elem, HasTmeshImpl, SimplexMesh, SubSimplexMesh},
     metric::Metric,
     remesher::{Remesher, RemesherParams},
 };
@@ -9,7 +9,10 @@ use log::{debug, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::FxHashSet;
 use serde::Serialize;
-use std::{sync::Mutex, time::Instant};
+use std::{marker::PhantomData, sync::Mutex, time::Instant};
+use tmesh::mesh::partition::Partitioner;
+
+use super::ElementCostEstimator;
 
 #[derive(Clone, Debug)]
 pub struct ParallelRemesherParams {
@@ -41,21 +44,16 @@ impl ParallelRemesherParams {
     }
 
     #[must_use]
-    const fn next(&self, n_verts: Idx, partition_type: PartitionType) -> Option<Self> {
-        match partition_type {
-            PartitionType::None => None,
-            _ => {
-                if self.level + 1 < self.max_levels && n_verts > self.min_verts {
-                    Some(Self {
-                        n_layers: self.n_layers,
-                        level: self.level + 1,
-                        max_levels: self.max_levels,
-                        min_verts: self.min_verts,
-                    })
-                } else {
-                    None
-                }
-            }
+    const fn next(&self, n_verts: Idx) -> Option<Self> {
+        if self.level + 1 < self.max_levels && n_verts > self.min_verts {
+            Some(Self {
+                n_layers: self.n_layers,
+                level: self.level + 1,
+                max_levels: self.max_levels,
+                min_verts: self.min_verts,
+            })
+        } else {
+            None
         }
     }
 }
@@ -124,19 +122,29 @@ impl ParallelRemeshingInfo {
 }
 
 /// Domain decomposition
-pub struct ParallelRemesher<const D: usize, E: Elem> {
+pub struct ParallelRemesher<
+    const D: usize,
+    E: Elem,
+    M: Metric<D>,
+    P: Partitioner,
+    C: ElementCostEstimator<D, E, M>,
+> {
     mesh: SimplexMesh<D, E>,
+    metric: Vec<M>,
+    n_parts: Idx,
     partition_tags: Vec<Tag>,
     partition_bdy_tags: Vec<Tag>,
-    partition_type: PartitionType,
     interface_bdy_tag: Tag,
     partition_time: f64,
     partition_quality: f64,
     partition_imbalance: f64,
     debug: bool,
+    _partitioner: PhantomData<P>,
+    _cost_estimator: PhantomData<C>,
 }
 
-impl<const D: usize, E: Elem> ParallelRemesher<D, E>
+impl<const D: usize, E: Elem, M: Metric<D>, P: Partitioner, C: ElementCostEstimator<D, E, M>>
+    ParallelRemesher<D, E, M, P, C>
 where
     SimplexMesh<D, E>: HasTmeshImpl<D, E>,
     SimplexMesh<D, E::Face>: HasTmeshImpl<D, E::Face>,
@@ -146,22 +154,15 @@ where
     /// scotch / metis. If None, the element tag in `mesh` is used as the partition Id
     ///
     /// NB: the mesh element tags will be modified
-    pub fn new(mut mesh: SimplexMesh<D, E>, partition_type: PartitionType) -> Result<Self> {
-        // Partition if needed
+    pub fn new(mut mesh: SimplexMesh<D, E>, metric: Vec<M>, n_parts: Idx) -> Result<Self> {
+        assert_eq!(mesh.n_verts() as usize, metric.len());
+
+        // Partition
         let now = Instant::now();
-        let (partition_quality, partition_imbalance) = match partition_type {
-            PartitionType::Hilbert(n)
-            // | PartitionType::Scotch(n)
-            | PartitionType::MetisRecursive(n)
-            | PartitionType::MetisKWay(n) => {
-                assert!(n > 1, "Need at least 2 partitions");
-                mesh.partition_simple(partition_type)?
-            }
-            PartitionType::None => {
-                debug!("Using the existing partition");
-                (0.0, 0.0)
-            }
-        };
+        let estimator = C::new(&mesh, &metric);
+        let weights = estimator.compute();
+        let (partition_quality, partition_imbalance) =
+            mesh.partition_elems::<P>(n_parts, Some(weights))?;
 
         let partition_time = now.elapsed().as_secs_f64();
 
@@ -183,14 +184,17 @@ where
 
         Ok(Self {
             mesh,
+            metric,
+            n_parts,
             partition_tags,
-            partition_type,
             partition_bdy_tags: ifc_tags.keys().copied().collect::<Vec<_>>(),
             interface_bdy_tag: Tag::MIN,
             partition_time,
             partition_quality,
             partition_imbalance,
             debug: false,
+            _partitioner: PhantomData,
+            _cost_estimator: PhantomData,
         })
     }
 
@@ -260,7 +264,7 @@ where
         tag == self.interface_bdy_tag
     }
 
-    fn remesh_submesh<M: Metric<D>, G: Geometry<D>>(
+    fn remesh_submesh<G: Geometry<D>>(
         &self,
         m: &[M],
         geom: &G,
@@ -289,9 +293,8 @@ where
 
     /// Remesh using domain decomposition
     #[allow(clippy::too_many_lines)]
-    pub fn remesh<M: Metric<D>, G: Geometry<D>>(
+    pub fn remesh<G: Geometry<D>>(
         &self,
-        m: &[M],
         geom: &G,
         params: RemesherParams,
         dd_params: &ParallelRemesherParams,
@@ -336,7 +339,7 @@ where
                 let n_verts_init = submesh.mesh.n_verts();
                 let now = Instant::now();
                 let (mut local_mesh, local_m) =
-                    self.remesh_submesh(m, geom, &params.clone(), submesh);
+                    self.remesh_submesh(&self.metric, geom, &params.clone(), submesh);
 
                 // Get the info
                 let mut info = info.lock().unwrap();
@@ -426,38 +429,37 @@ where
         ifc.compute_topology_from(topo);
         let ifc_m = ifc_m.into_inner().unwrap();
 
-        let (mut ifc, ifc_m) =
-            if let Some(dd_params) = dd_params.next(ifc.n_verts(), self.partition_type) {
-                let mesh = ifc;
-                let mut dd = Self::new(mesh, self.partition_type)?;
-                dd.set_debug(self.debug);
-                dd.interface_bdy_tag = self.interface_bdy_tag + 1;
-                let (ifc, interface_info, ifc_m) = dd.remesh(&ifc_m, geom, params, &dd_params)?;
-                info.interface = Some(Box::new(interface_info));
-                (ifc, ifc_m)
-            } else {
-                debug!("Remeshing level {level} / interface");
-                let mut ifc_remesher = Remesher::new(&ifc, &ifc_m, geom)?;
-                if self.debug {
-                    ifc_remesher.check().unwrap();
-                }
-                let n_verts_init = ifc.n_verts();
-                let now = Instant::now();
-                ifc_remesher.remesh(&params, geom)?;
-                info.interface = Some(Box::new(ParallelRemeshingInfo {
-                    info: RemeshingInfo {
-                        n_verts_init,
-                        n_verts_final: ifc_remesher.n_verts(),
-                        time: now.elapsed().as_secs_f64(),
-                    },
-                    partition_time: 0.0,
-                    partition_quality: 0.0,
-                    partition_imbalance: 0.0,
-                    partitions: Vec::new(),
-                    interface: None,
-                }));
-                (ifc_remesher.to_mesh(true), ifc_remesher.metrics())
-            };
+        let (mut ifc, ifc_m) = if let Some(dd_params) = dd_params.next(ifc.n_verts()) {
+            let mesh = ifc;
+            let mut dd = Self::new(mesh, ifc_m, self.n_parts)?;
+            dd.set_debug(self.debug);
+            dd.interface_bdy_tag = self.interface_bdy_tag + 1;
+            let (ifc, interface_info, ifc_m) = dd.remesh(geom, params, &dd_params)?;
+            info.interface = Some(Box::new(interface_info));
+            (ifc, ifc_m)
+        } else {
+            debug!("Remeshing level {level} / interface");
+            let mut ifc_remesher = Remesher::new(&ifc, &ifc_m, geom)?;
+            if self.debug {
+                ifc_remesher.check().unwrap();
+            }
+            let n_verts_init = ifc.n_verts();
+            let now = Instant::now();
+            ifc_remesher.remesh(&params, geom)?;
+            info.interface = Some(Box::new(ParallelRemeshingInfo {
+                info: RemeshingInfo {
+                    n_verts_init,
+                    n_verts_final: ifc_remesher.n_verts(),
+                    time: now.elapsed().as_secs_f64(),
+                },
+                partition_time: 0.0,
+                partition_quality: 0.0,
+                partition_imbalance: 0.0,
+                partitions: Vec::new(),
+                interface: None,
+            }));
+            (ifc_remesher.to_mesh(true), ifc_remesher.metrics())
+        };
 
         if self.debug {
             let fname = format!("level_{level}_ifc_remeshed.vtu");
@@ -503,7 +505,7 @@ mod tests {
         Result,
         geometry::NoGeometry,
         mesh::{
-            HasTmeshImpl, PartitionType, Point,
+            HasTmeshImpl, Point,
             test_meshes::{test_mesh_2d, test_mesh_3d},
         },
         metric::IsoMetric,
