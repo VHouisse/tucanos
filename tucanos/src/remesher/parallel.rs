@@ -2,8 +2,8 @@ use crate::{
     Idx, Result, Tag,
     geometry::Geometry,
     mesh::{Elem, HasTmeshImpl, SimplexMesh, SubSimplexMesh},
-    metric::Metric,
-    remesher::{Remesher, RemesherParams},
+    metric::{HasImpliedMetric, IsoMetric, Metric},
+    remesher::{Remesher, RemesherParams, cost_estimator::TotoCostEstimator},
 };
 use log::{debug, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
@@ -148,6 +148,8 @@ impl<const D: usize, E: Elem, M: Metric<D>, P: Partitioner, C: ElementCostEstima
 where
     SimplexMesh<D, E>: HasTmeshImpl<D, E>,
     SimplexMesh<D, E::Face>: HasTmeshImpl<D, E::Face>,
+    E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
+    M: Into<<E::Geom<D, IsoMetric<D>> as HasImpliedMetric<D, IsoMetric<D>>>::ImpliedMetricType>,
 {
     /// Create a new parallel remesher based on domain decomposition.
     /// If part is `PartitionType::Scotch(n)` or `PartitionType::Metis(n)` the mesh is partitionned into n subdomains using
@@ -159,8 +161,8 @@ where
 
         // Partition
         let now = Instant::now();
-        let estimator = C::new(&mesh, &metric);
-        let weights = estimator.compute();
+        let estimator = TotoCostEstimator::new();
+        let weights = estimator.compute(&mesh, &metric);
         let (partition_quality, partition_imbalance) =
             mesh.partition_elems::<P>(n_parts, Some(weights))?;
 

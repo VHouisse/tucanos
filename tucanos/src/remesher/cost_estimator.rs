@@ -1,4 +1,4 @@
-use rayon::iter::{Inspect, ParallelIterator};
+use rayon::iter::ParallelIterator;
 use std::marker::PhantomData;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
 pub trait ElementCostEstimator<const D: usize, E: Elem, M: Metric<D>>: Send + Sync {
     // fn new(msh: &SimplexMesh<D, E>, m: &[M]) -> Self;
     // fn compute(&self) -> Vec<f64>;
-    fn compute(msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64>;
+    fn compute(&self, msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64>;
     type CurrentImpliedMetricType;
 }
 
@@ -29,7 +29,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> ElementCostEstimator<D, E, M>
     //     }
     // }
 
-    fn compute(msh: &SimplexMesh<D, E>, _m: &[M]) -> Vec<f64> {
+    fn compute(&self, msh: &SimplexMesh<D, E>, _m: &[M]) -> Vec<f64> {
         vec![1.0; msh.n_elems() as usize]
     }
     type CurrentImpliedMetricType = AnisoMetric2d;
@@ -56,12 +56,24 @@ fn work_eval(initial_density: f64, actual_density: f64, intersected_density: f64
     work
 }
 
+impl<const D: usize, E: Elem, M: Metric<D>> TotoCostEstimator<D, E, M>
+where
+    E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
+    M: Into<<E::Geom<D, IsoMetric<D>> as HasImpliedMetric<D, IsoMetric<D>>>::ImpliedMetricType>,
+{
+    pub fn new() -> Self {
+        Self {
+            _e: PhantomData,
+            _m: PhantomData,
+        }
+    }
+}
+
 impl<const D: usize, E: Elem, M: Metric<D>> ElementCostEstimator<D, E, M>
     for TotoCostEstimator<D, E, M>
 where
     E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
     M: Into<<E::Geom<D, IsoMetric<D>> as HasImpliedMetric<D, IsoMetric<D>>>::ImpliedMetricType>,
-    std::vec::Vec<<<E as Elem>::Geom<D, IsoMetric<D>> as HasImpliedMetric<D, IsoMetric<D>>>::ImpliedMetricType>: FromIterator<()>
 {
     // fn new(msh: &SimplexMesh<D, E>, _m: &[M]) -> Self {
     //     Self {
@@ -75,8 +87,8 @@ where
         IsoMetric<D>,
     >>::ImpliedMetricType;
 
-    fn compute(msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64> {
-        let  implied_metrics: Vec<Self::CurrentImpliedMetricType> = msh
+    fn compute(&self, msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64> {
+        let implied_metrics: Vec<Self::CurrentImpliedMetricType> = msh
             .par_gelems()
             .map(|ge| ge.calculate_implied_metric())
             .collect();
@@ -88,7 +100,7 @@ where
             .map(|(implied_metrics_ref, _p_m_ref)| {
                 let tmp = *_p_m_ref;
                 let tmp: Self::CurrentImpliedMetricType = tmp.into();
-                implied_metrics_ref.intersect(&tmp);
+                implied_metrics_ref.intersect(&tmp)
             })
             .collect();
 
