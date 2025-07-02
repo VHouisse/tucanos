@@ -6,6 +6,8 @@ mod reduction;
 mod scaling;
 mod smoothing;
 
+pub use implied::HasImpliedMetric;
+
 use crate::metric::reduction::{control_step, simultaneous_reduction, step};
 use crate::{Error, Result, mesh::Point};
 use crate::{H_MAX, S_MAX, S_MIN, S_RATIO_MAX};
@@ -30,6 +32,10 @@ pub trait Metric<const D: usize>:
     fn length(&self, e: &Point<D>) -> f64;
     /// Compute the volume associated with the metric
     fn vol(&self) -> f64;
+    /// Compute the density associated with the metric
+    fn density(&self) -> f64 {
+        1.0 / self.vol()
+    }
     /// Interpolate between different metrics to return a valid metric
     fn interpolate<'a, I: Iterator<Item = (f64, &'a Self)>>(weights_and_metrics: I) -> Self
     where
