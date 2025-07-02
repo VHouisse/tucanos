@@ -1,6 +1,6 @@
 //! Mesh partitioners
 use super::{Cell, Face, Mesh, Simplex, cell_center, hilbert::hilbert_indices};
-use crate::{Error, Result, Vert2d, Vert3d, graph::CSRGraph};
+use crate::{Error, Result, Vert2d, Vert3d, argmax, graph::CSRGraph};
 use coupe::Partition;
 #[cfg(feature = "metis")]
 use std::marker::PhantomData;
@@ -63,6 +63,165 @@ pub trait Partitioner: Sized {
         }
         f64::from(split) / f64::from(count)
     }
+    /// todo
+    fn partition_correction(&self, part: &mut [usize]) {
+        let n_elems = self.graph().n();
+        let weights = self.weights().collect::<Vec<_>>();
+        for i_part in 0..self.n_parts() {
+            let elem_ids = (0..n_elems)
+                .filter(|&i| part[i] == i_part)
+                .collect::<Vec<_>>();
+            let sgraph = self.graph().subgraph(elem_ids.iter().copied());
+            let cc = sgraph.connected_components().unwrap();
+            let n_cc = cc.iter().copied().max().unwrap_or(0) + 1;
+            println!("{i_part} -> {n_cc}");
+            if n_cc > 1 {
+                let mut cc_weights = vec![0.0; n_cc];
+                let mut n_faces = vec![vec![0; self.n_parts()]; n_cc];
+                for (i, &j) in elem_ids.iter().enumerate() {
+                    let i_cc = cc[i];
+                    cc_weights[cc[i]] += weights[j];
+                    for &i_neighbor in self.graph().row(j) {
+                        let i_part_neighbor = part[i_neighbor];
+                        if i_part_neighbor != i_part {
+                            n_faces[i_cc][i_part_neighbor] += 1;
+                        }
+                    }
+                }
+                let i_max_cc = argmax(&cc_weights).unwrap();
+                for i_cc in 0..n_cc {
+                    if i_cc != i_max_cc {
+                        let i_new_part = argmax(&n_faces[i_cc]).unwrap();
+                        for (i, &j) in elem_ids.iter().enumerate() {
+                            if cc[i] == i_cc {
+                                part[j] = i_new_part;
+                            }
+                        }
+                    }
+                }
+            }
+            // let mut smsh = self.extract_tag(i_part as Tag + 1);
+            // let e2e = smsh.mesh.compute_elem_to_elems();
+            // let cc = ConnectedComponents::<Idx>::new(e2e);
+            // let mut _n_cc = 1;
+            // if let Ok(cc_graph) = cc {
+            //     _n_cc = cc_graph
+            //         .tags()
+            //         .iter()
+            //         .clone()
+            //         .collect::<FxHashSet<_>>()
+            //         .len();
+            //     //println!("Partition n° : {} et nombre de composantes connexes {} ", i_part, n_cc);
+            //     let cc_tags = cc_graph.tags();
+            //     // Regroupe les éléments d'une composante connexe d'un subMesh par un id
+            //     let mut current_partition_cc: HashMap<Idx, Vec<Idx>> = HashMap::new();
+            //     for (sub_elem_idx, &cc_id) in cc_tags.iter().enumerate() {
+            //         let parent_elemnt_id = smsh.parent_elem_ids[sub_elem_idx];
+            //         current_partition_cc
+            //             .entry(cc_id)
+            //             .or_default()
+            //             .push(parent_elemnt_id);
+            //     }
+
+            //     let mut current_partition_cc_infos: Vec<ConnectedComponentsInfo> = Vec::new();
+            //     let mut max_work_per_cc = 0.0;
+            //     let mut _primary_cc_id = 999;
+
+            //     for (cc_id, elements_in_cc) in current_partition_cc {
+            //         let current_cc_work: f64 = elements_in_cc
+            //             .iter()
+            //             .map(|&elemn_parent_id| work[elemn_parent_id as usize])
+            //             .sum();
+
+            //         current_partition_cc_infos.push(ConnectedComponentsInfo {
+            //             cc_idx: cc_id,
+            //             elements: elements_in_cc,
+            //             total_work: current_cc_work,
+            //             is_primary: false,
+            //             partition_id: i_part as Tag + 1,
+            //         });
+            //         if current_cc_work > max_work_per_cc {
+            //             max_work_per_cc = current_cc_work;
+            //             _primary_cc_id = cc_id;
+            //         }
+            //     }
+            //     for cc_info in &mut current_partition_cc_infos {
+            //         if cc_info.cc_idx == _primary_cc_id {
+            //             cc_info.is_primary = true;
+            //         }
+            //         cc_infos.insert((i_part as Tag + 1, cc_info.get_cc_idx()), cc_info.clone());
+            //     }
+        }
+    }
+    // // Fusion Part
+    // // To do Parallelize
+    // let mut element_links: HashMap<Idx, (Tag, Idx)> = HashMap::new();
+    // for ((_, _), cc_info) in &cc_infos {
+    //     cc_info.elements_iter().for_each(|elem_id| {
+    //         element_links.insert(elem_id, (cc_info.get_partition_id(), cc_info.get_cc_idx()));
+    //     });
+    // }
+
+    // self.compute_elem_to_elems();
+    // let e2e_tmesh = self.get_elem_to_elems().unwrap().clone();
+
+    // let non_primary_cc_keys_to_process: Vec<(Tag, Idx)> = cc_infos
+    //     .iter()
+    //     .filter(|&(_, info)| !info.get_is_primary())
+    //     .map(|(&key, _)| key)
+    //     .collect();
+    // for np_cc_key in non_primary_cc_keys_to_process {
+    //     let Some(non_primary_cc_info) = cc_infos.remove(&np_cc_key) else {
+    //         continue; // La CC a déjà été fusionnée ou supprimée
+    //     };
+    //     let neigbors: Vec<Idx> = non_primary_cc_info
+    //         .elements_iter()
+    //         .flat_map(|elem_id| e2e_tmesh.row(elem_id).iter().copied())
+    //         .collect();
+
+    //     let cc_key_neighbors: Vec<(Tag, Idx)> = neigbors
+    //         .iter()
+    //         .flat_map(|&neighbor_id| element_links.get(&neighbor_id).copied()) // <- Correction ici
+    //         .collect();
+
+    //     let cc_neighbor: Vec<ConnectedComponentsInfo> = cc_key_neighbors
+    //         .iter()
+    //         .filter_map(|&(cc_p_tag, cc_idx)| cc_infos.get(&(cc_p_tag, cc_idx)).cloned())
+    //         .collect();
+
+    //     if let Some(chosen_primary_cc_info) = cc_neighbor
+    //         .iter() // Itérer sur les références aux CCs voisines
+    //         .filter(|cc_info| cc_info.get_is_primary()) // Filtrer directement par la méthode get_is_primary()
+    //         .min_by(|a, b| {
+    //             a.total_work
+    //                 .partial_cmp(&b.total_work)
+    //                 .unwrap_or(std::cmp::Ordering::Equal)
+    //         })
+    //     {
+    //         let target_partition_id = chosen_primary_cc_info.get_partition_id();
+    //         let target_cc_id = chosen_primary_cc_info.get_cc_idx();
+    //         let target_primary_key = (target_partition_id, target_cc_id);
+
+    //         let elements_to_move_ids: Vec<Idx> = non_primary_cc_info.elements_iter().collect();
+    //         let etags_ref_mut = self.get_etags_mut();
+
+    //         for &elem_id in &elements_to_move_ids {
+    //             etags_ref_mut[elem_id as usize] = target_partition_id
+    //         }
+
+    //         // Update Changes
+    //         let target_primary_cc_entry = cc_infos
+    //             .get_mut(&target_primary_key)
+    //             .expect("Target primary CC info not found for update.");
+
+    //         target_primary_cc_entry
+    //             .elements
+    //             .extend_from_slice(&non_primary_cc_info.elements);
+    //         target_primary_cc_entry.total_work += non_primary_cc_info.total_work;
+    //     }
+
+    // }
+    // }
 }
 
 /// Simple geometric partitionner based on the Hilbert indices of the element centers
@@ -415,6 +574,76 @@ impl<T: MetisPartMethod> Partitioner for MetisPartitioner<T> {
     }
 }
 
+pub struct HilbertBallPartitioner {
+    n_parts: usize,
+    graph: CSRGraph,
+    ids: Vec<usize>,
+    weights: Vec<f64>,
+    v2e: CSRGraph,
+}
+
+impl Partitioner for HilbertBallPartitioner {
+    fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
+        msh: &M,
+        n_parts: usize,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Self>
+    where
+        Cell<C>: Simplex<C>,
+        Face<F>: Simplex<F>,
+    {
+        let faces = msh.all_faces();
+        let graph = msh.element_pairs(&faces);
+
+        let ids = hilbert_indices(msh.verts());
+        let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
+        Ok(Self {
+            n_parts,
+            graph,
+            ids,
+            weights,
+            v2e: msh.vertex_to_elems(),
+        })
+    }
+
+    fn compute(&self) -> Result<Vec<usize>> {
+        let target_weight = self.weights.iter().copied().sum::<f64>() / self.n_parts as f64;
+
+        let mut partition = vec![usize::MAX; self.weights.len()];
+        let mut current_partition_idx = 0;
+        let mut current_work_partition = 0.0;
+
+        //To parallelize
+        for &i_vert in &self.ids {
+            let element_in_ball = self.v2e.row(i_vert);
+            for &i_elem in element_in_ball {
+                if partition[i_elem] == usize::MAX {
+                    let elem_work = self.weights[i_elem];
+                    if (current_work_partition + elem_work) > target_weight {
+                        current_work_partition = elem_work; // change
+                        if current_partition_idx < self.n_parts - 1 {
+                            current_partition_idx += 1;
+                        }
+                        // continue;// ??
+                    } else {
+                        current_work_partition += elem_work;
+                    }
+                    partition[i_elem] = current_partition_idx;
+                }
+            }
+        }
+        self.partition_correction(&mut partition);
+        Ok(partition)
+    }
+
+    fn n_parts(&self) -> usize {
+        self.n_parts
+    }
+
+    fn graph(&self) -> &CSRGraph {
+        &self.graph
+    }
+}
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "metis")]
