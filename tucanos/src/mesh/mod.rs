@@ -1,5 +1,5 @@
 mod autotag;
-mod geom_elems;
+pub mod geom_elems;
 mod gradient_l2proj;
 mod gradient_ls;
 #[allow(dead_code)]

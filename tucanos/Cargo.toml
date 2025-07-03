@@ -28,5 +28,9 @@ metis = ["tmesh/metis"]
 [[example]]
 name = "adapt_ellipse"
 
+[[bin]]
+name = "main"
+path = "examples/Tests/main.rs"
+
 [lints]
 workspace = true

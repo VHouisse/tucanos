@@ -1,3 +1,5 @@
+use super::ElementCostEstimator;
+
 use crate::{
     Idx, Result, Tag,
     geometry::Geometry,
@@ -11,8 +13,6 @@ use rustc_hash::FxHashSet;
 use serde::Serialize;
 use std::{marker::PhantomData, sync::Mutex, time::Instant};
 use tmesh::mesh::partition::Partitioner;
-
-use super::ElementCostEstimator;
 
 #[derive(Clone, Debug)]
 pub struct ParallelRemesherParams {
@@ -157,12 +157,13 @@ where
     ///
     /// NB: the mesh element tags will be modified
     pub fn new(mut mesh: SimplexMesh<D, E>, metric: Vec<M>, n_parts: Idx) -> Result<Self> {
-        assert_eq!(mesh.n_verts() as usize, metric.len());
+        assert_eq!(mesh.n_elems() as usize, metric.len());
 
         // Partition
         let now = Instant::now();
         let estimator = TotoCostEstimator::new();
         let weights = estimator.compute(&mesh, &metric);
+        println!("Weights {:?}", weights);
         let (partition_quality, partition_imbalance) =
             mesh.partition_elems::<P>(n_parts, Some(weights))?;
 
@@ -501,6 +502,7 @@ where
 #[cfg(test)]
 mod tests {
 
+    use crate::mesh::geom_elems::GElem;
     use tmesh::mesh::{
         Mesh,
         partition::{HilbertPartitioner, Partitioner},
@@ -513,7 +515,7 @@ mod tests {
         metric::IsoMetric,
         remesher::{
             ElementCostEstimator, ParallelRemesher, ParallelRemesherParams, RemesherParams,
-            cost_estimator::NoCostEstimator,
+            cost_estimator::{NoCostEstimator, TotoCostEstimator},
         },
     };
 
@@ -540,10 +542,19 @@ mod tests {
                 * (1.0 - f64::exp(-((x - 0.5).powi(2) + (y - 0.35).powi(2)) / sigma.powi(2)))
         };
 
-        let m: Vec<_> = (0..mesh.n_verts())
-            .map(|i| IsoMetric::<2>::from(h(mesh.vert(i))))
+        // let m: Vec<_> = (0..mesh.n_verts())
+        //     .map(|i| IsoMetric::<2>::from(h(mesh.vert(i))))
+        //     .collect();
+        mesh.compute_volumes();
+        let m: Vec<_> = mesh
+            .gelems() // `gelems()` retourne un itérateur sur les éléments géométriques (GTriangle dans ce cas)
+            .map(|g_elem| {
+                let center_point = g_elem.center(); // Obtenez le Point<2> du centre de l'élément
+                let metric_value = h(center_point); // Calculez la valeur scalaire (f64) de la métrique en utilisant ce point
+                IsoMetric::<2>::from(metric_value) // Convertissez la valeur scalaire en IsoMetric<2>
+            })
             .collect();
-
+        println!("{}", m.len());
         let dd = ParallelRemesher::<2, Triangle, IsoMetric<2>, P, C>::new(mesh, m, n_parts)?;
 
         let dd_params = ParallelRemesherParams::new(2, 1, 0);
@@ -575,30 +586,33 @@ mod tests {
     fn test_dd_2d_hilbert_1() {
         test_domain_decomposition_2d::<
             HilbertPartitioner,
-            NoCostEstimator<2, Triangle, IsoMetric<2>>,
+            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
         >(false, 1)
         .unwrap();
     }
 
     #[test]
     fn test_dd_2d_hilbert_2() -> Result<()> {
-        test_domain_decomposition_2d::<HilbertPartitioner, NoCostEstimator<2, Triangle, IsoMetric<2>>>(
-            false, 2,
-        )
+        test_domain_decomposition_2d::<
+            HilbertPartitioner,
+            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+        >(false, 2)
     }
 
     #[test]
     fn test_dd_2d_hilbert_3() -> Result<()> {
-        test_domain_decomposition_2d::<HilbertPartitioner, NoCostEstimator<2, Triangle, IsoMetric<2>>>(
-            false, 3,
-        )
+        test_domain_decomposition_2d::<
+            HilbertPartitioner,
+            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+        >(false, 3)
     }
 
     #[test]
     fn test_dd_2d_hilbert_4() -> Result<()> {
-        test_domain_decomposition_2d::<HilbertPartitioner, NoCostEstimator<2, Triangle, IsoMetric<2>>>(
-            false, 4,
-        )
+        test_domain_decomposition_2d::<
+            HilbertPartitioner,
+            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+        >(false, 4)
     }
 
     #[test]

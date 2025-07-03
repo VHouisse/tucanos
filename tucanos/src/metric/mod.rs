@@ -140,6 +140,18 @@ impl<const D: usize> Default for IsoMetric<D> {
     }
 }
 
+impl From<IsoMetric<2>> for AnisoMetric2d {
+    fn from(iso_metric_2d: IsoMetric<2>) -> Self {
+        Self::from_iso(&iso_metric_2d)
+    }
+}
+
+impl From<IsoMetric<3>> for AnisoMetric3d {
+    fn from(iso_metric_3d: IsoMetric<3>) -> Self {
+        Self::from_iso(&iso_metric_3d)
+    }
+}
+
 impl<const D: usize> Metric<D> for IsoMetric<D> {
     const N: usize = 1;
 
