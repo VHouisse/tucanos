@@ -91,7 +91,11 @@ pub trait Partitioner: Sized + Send + Sync {
                 let i_max_cc = argmax(&cc_weights).unwrap();
                 for (i_cc, n_faces) in n_faces.iter().enumerate() {
                     if i_cc != i_max_cc {
+                        //Option 1 : Maximize the quality of partitions
                         let i_new_part = argmax(n_faces).unwrap();
+                        //Todo
+                        //Option 2 : Maximize the load balancing
+                        //Option 3 : Maximize Both
                         for (i, &j) in elem_ids.iter().enumerate() {
                             if cc[i] == i_cc {
                                 part[j] = i_new_part;
@@ -222,6 +226,136 @@ pub trait Partitioner: Sized + Send + Sync {
 
     // }
     // }
+}
+pub struct BFSWRPartitionner {
+    n_parts: usize,
+    graph: CSRGraph,
+    ids: Vec<usize>,
+    weights: Vec<f64>,
+}
+
+impl Partitioner for BFSWRPartitionner {
+    fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
+        msh: &M,
+        n_parts: usize,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Self>
+    where
+        Cell<C>: Simplex<C>,
+        Face<F>: Simplex<F>,
+    {
+        let faces = msh.all_faces();
+        let graph = msh.element_pairs(&faces);
+
+        let centers = msh.gelems().map(|ge| cell_center(&ge));
+        let ids = hilbert_indices(centers);
+        let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
+        Ok(Self {
+            n_parts,
+            graph,
+            ids,
+            weights,
+        })
+    }
+
+    fn compute(&self) -> Result<Vec<usize>> {
+        todo!()
+    }
+
+    fn n_parts(&self) -> usize {
+        self.n_parts
+    }
+
+    fn graph(&self) -> &CSRGraph {
+        &self.graph
+    }
+}
+
+pub struct BFSPartitionner {
+    n_parts: usize,
+    graph: CSRGraph,
+    ids: Vec<usize>,
+    weights: Vec<f64>,
+}
+
+impl Partitioner for BFSPartitionner {
+    fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
+        msh: &M,
+        n_parts: usize,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Self>
+    where
+        Cell<C>: Simplex<C>,
+        Face<F>: Simplex<F>,
+    {
+        let faces = msh.all_faces();
+        let graph = msh.element_pairs(&faces);
+
+        let centers = msh.gelems().map(|ge| cell_center(&ge));
+        let ids = hilbert_indices(centers);
+        let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
+        Ok(Self {
+            n_parts,
+            graph,
+            ids,
+            weights,
+        })
+    }
+
+    fn compute(&self) -> Result<Vec<usize>> {
+        todo!()
+    }
+
+    fn n_parts(&self) -> usize {
+        self.n_parts
+    }
+
+    fn graph(&self) -> &CSRGraph {
+        &self.graph
+    }
+}
+pub struct HilbertBallPartitioner {
+    n_parts: usize,
+    graph: CSRGraph,
+    ids: Vec<usize>,
+    weights: Vec<f64>,
+}
+
+impl Partitioner for HilbertBallPartitioner {
+    fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
+        msh: &M,
+        n_parts: usize,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Self>
+    where
+        Cell<C>: Simplex<C>,
+        Face<F>: Simplex<F>,
+    {
+        let faces = msh.all_faces();
+        let graph = msh.element_pairs(&faces);
+
+        let centers = msh.gelems().map(|ge| cell_center(&ge));
+        let ids = hilbert_indices(centers);
+        let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
+        Ok(Self {
+            n_parts,
+            graph,
+            ids,
+            weights,
+        })
+    }
+
+    fn compute(&self) -> Result<Vec<usize>> {
+        todo!()
+    }
+
+    fn n_parts(&self) -> usize {
+        self.n_parts
+    }
+
+    fn graph(&self) -> &CSRGraph {
+        &self.graph
+    }
 }
 
 /// Simple geometric partitionner based on the Hilbert indices of the element centers
