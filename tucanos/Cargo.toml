@@ -28,9 +28,13 @@ metis = ["tmesh/metis"]
 [[example]]
 name = "adapt_ellipse"
 
-[[bin]]
-name = "main"
-path = "examples/Tests/main.rs"
+[[example]]
+name = "partition_3d_bis"
+
+[[example]]
+name = "partition_2d"
+
 
 [lints]
 workspace = true
+

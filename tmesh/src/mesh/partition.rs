@@ -2,6 +2,8 @@
 use super::{Cell, Face, Mesh, Simplex, cell_center, hilbert::hilbert_indices};
 use crate::{Error, Result, Vert2d, Vert3d, argmax, graph::CSRGraph};
 use coupe::Partition;
+
+use std::collections::{HashSet, VecDeque};
 #[cfg(feature = "metis")]
 use std::marker::PhantomData;
 
@@ -64,7 +66,7 @@ pub trait Partitioner: Sized + Send + Sync {
         f64::from(split) / f64::from(count)
     }
     /// todo
-    fn partition_correction(&self, part: &mut [usize]) {
+    fn partition_correction(&self, part: &mut Vec<usize>) {
         let n_elems = self.graph().n();
         let weights = self.weights().collect::<Vec<_>>();
         for i_part in 0..self.n_parts() {
@@ -227,49 +229,49 @@ pub trait Partitioner: Sized + Send + Sync {
     // }
     // }
 }
-pub struct BFSWRPartitionner {
-    n_parts: usize,
-    graph: CSRGraph,
-    ids: Vec<usize>,
-    weights: Vec<f64>,
-}
+// pub struct BFSWRPartitionner {
+//     n_parts: usize,
+//     graph: CSRGraph,
+//     ids: Vec<usize>,
+//     weights: Vec<f64>,
+// }
 
-impl Partitioner for BFSWRPartitionner {
-    fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
-        msh: &M,
-        n_parts: usize,
-        weights: Option<Vec<f64>>,
-    ) -> Result<Self>
-    where
-        Cell<C>: Simplex<C>,
-        Face<F>: Simplex<F>,
-    {
-        let faces = msh.all_faces();
-        let graph = msh.element_pairs(&faces);
+// impl Partitioner for BFSWRPartitionner {
+//     fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
+//         msh: &M,
+//         n_parts: usize,
+//         weights: Option<Vec<f64>>,
+//     ) -> Result<Self>
+//     where
+//         Cell<C>: Simplex<C>,
+//         Face<F>: Simplex<F>,
+//     {
+//         let faces = msh.all_faces();
+//         let graph = msh.element_pairs(&faces);
 
-        let centers = msh.gelems().map(|ge| cell_center(&ge));
-        let ids = hilbert_indices(centers);
-        let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
-        Ok(Self {
-            n_parts,
-            graph,
-            ids,
-            weights,
-        })
-    }
+//         let centers = msh.gelems().map(|ge| cell_center(&ge));
+//         let ids = hilbert_indices(centers);
+//         let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
+//         Ok(Self {
+//             n_parts,
+//             graph,
+//             ids,
+//             weights,
+//         })
+//     }
 
-    fn compute(&self) -> Result<Vec<usize>> {
-        todo!()
-    }
+//     fn compute(&self) -> Result<Vec<usize>> {
+//         todo!()
+//     }
 
-    fn n_parts(&self) -> usize {
-        self.n_parts
-    }
+//     fn n_parts(&self) -> usize {
+//         self.n_parts
+//     }
 
-    fn graph(&self) -> &CSRGraph {
-        &self.graph
-    }
-}
+//     fn graph(&self) -> &CSRGraph {
+//         &self.graph
+//     }
+// }
 
 pub struct BFSPartitionner {
     n_parts: usize,
@@ -303,7 +305,58 @@ impl Partitioner for BFSPartitionner {
     }
 
     fn compute(&self) -> Result<Vec<usize>> {
-        todo!()
+        let target_weight = self.weights.iter().copied().sum::<f64>() / self.n_parts() as f64;
+        let mut res = vec![0; self.weights.len()];
+        let n_elems = self.weights.len();
+        let mut assigned_elements: HashSet<usize> = HashSet::new();
+        let mut current_partition_idx = 0;
+        let mut current_work_partition = 0.0;
+        let mut queue: VecDeque<usize> = VecDeque::new();
+
+        let mut next_unassigned_elem_root = 0;
+
+        while assigned_elements.len() < n_elems && current_partition_idx < self.n_parts() {
+            while next_unassigned_elem_root < n_elems
+                && assigned_elements.contains(&(next_unassigned_elem_root as usize))
+            {
+                next_unassigned_elem_root += 1;
+            }
+
+            if next_unassigned_elem_root == n_elems {
+                break;
+            }
+
+            let start_elem_id = next_unassigned_elem_root as usize;
+            queue.push_back(self.ids[start_elem_id]);
+            assigned_elements.insert(self.ids[start_elem_id]);
+
+            while let Some(current_elem_id) = queue.pop_front() {
+                let elem_work = self.weights[current_elem_id as usize];
+
+                if current_work_partition + elem_work > target_weight
+                    && current_partition_idx + 1 < self.n_parts()
+                {
+                    current_partition_idx += 1;
+                    current_work_partition = 0.0;
+                }
+
+                res[current_elem_id as usize] = current_partition_idx as usize;
+                current_work_partition += elem_work;
+
+                for &neighbor_elem_id in self.graph.row(current_elem_id).iter() {
+                    if !assigned_elements.contains(&neighbor_elem_id) {
+                        assigned_elements.insert(neighbor_elem_id);
+                        queue.push_back(neighbor_elem_id);
+                    }
+                }
+            }
+            if current_partition_idx + 1 < self.n_parts() && assigned_elements.len() < n_elems {
+                current_partition_idx += 1;
+                current_work_partition = 0.0;
+            }
+        }
+
+        Ok(res)
     }
 
     fn n_parts(&self) -> usize {
@@ -313,12 +366,6 @@ impl Partitioner for BFSPartitionner {
     fn graph(&self) -> &CSRGraph {
         &self.graph
     }
-}
-pub struct HilbertBallPartitioner {
-    n_parts: usize,
-    graph: CSRGraph,
-    ids: Vec<usize>,
-    weights: Vec<f64>,
 }
 
 impl Partitioner for HilbertBallPartitioner {
@@ -334,19 +381,45 @@ impl Partitioner for HilbertBallPartitioner {
         let faces = msh.all_faces();
         let graph = msh.element_pairs(&faces);
 
-        let centers = msh.gelems().map(|ge| cell_center(&ge));
-        let ids = hilbert_indices(centers);
+        let ids = hilbert_indices(msh.verts());
         let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
         Ok(Self {
             n_parts,
             graph,
             ids,
             weights,
+            v2e: msh.vertex_to_elems(),
         })
     }
 
     fn compute(&self) -> Result<Vec<usize>> {
-        todo!()
+        let target_weight = self.weights.iter().copied().sum::<f64>() / self.n_parts as f64;
+
+        let mut partition = vec![usize::MAX; self.weights.len()];
+        let mut current_partition_idx = 0;
+        let mut current_work_partition = 0.0;
+
+        //To parallelize
+        for &i_vert in &self.ids {
+            let element_in_ball = self.v2e.row(i_vert);
+            for &i_elem in element_in_ball {
+                if partition[i_elem] == usize::MAX {
+                    let elem_work = self.weights[i_elem];
+                    if (current_work_partition + elem_work) > target_weight {
+                        current_work_partition = elem_work; // change
+                        if current_partition_idx < self.n_parts - 1 {
+                            current_partition_idx += 1;
+                        }
+                        // continue;// ??
+                    } else {
+                        current_work_partition += elem_work;
+                    }
+                    partition[i_elem] = current_partition_idx;
+                }
+            }
+        }
+        self.partition_correction(&mut partition);
+        Ok(partition)
     }
 
     fn n_parts(&self) -> usize {
@@ -357,7 +430,6 @@ impl Partitioner for HilbertBallPartitioner {
         &self.graph
     }
 }
-
 /// Simple geometric partitionner based on the Hilbert indices of the element centers
 pub struct HilbertPartitioner {
     n_parts: usize,
@@ -716,68 +788,6 @@ pub struct HilbertBallPartitioner {
     v2e: CSRGraph,
 }
 
-impl Partitioner for HilbertBallPartitioner {
-    fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
-        msh: &M,
-        n_parts: usize,
-        weights: Option<Vec<f64>>,
-    ) -> Result<Self>
-    where
-        Cell<C>: Simplex<C>,
-        Face<F>: Simplex<F>,
-    {
-        let faces = msh.all_faces();
-        let graph = msh.element_pairs(&faces);
-
-        let ids = hilbert_indices(msh.verts());
-        let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
-        Ok(Self {
-            n_parts,
-            graph,
-            ids,
-            weights,
-            v2e: msh.vertex_to_elems(),
-        })
-    }
-
-    fn compute(&self) -> Result<Vec<usize>> {
-        let target_weight = self.weights.iter().copied().sum::<f64>() / self.n_parts as f64;
-
-        let mut partition = vec![usize::MAX; self.weights.len()];
-        let mut current_partition_idx = 0;
-        let mut current_work_partition = 0.0;
-
-        //To parallelize
-        for &i_vert in &self.ids {
-            let element_in_ball = self.v2e.row(i_vert);
-            for &i_elem in element_in_ball {
-                if partition[i_elem] == usize::MAX {
-                    let elem_work = self.weights[i_elem];
-                    if (current_work_partition + elem_work) > target_weight {
-                        current_work_partition = elem_work; // change
-                        if current_partition_idx < self.n_parts - 1 {
-                            current_partition_idx += 1;
-                        }
-                        // continue;// ??
-                    } else {
-                        current_work_partition += elem_work;
-                    }
-                    partition[i_elem] = current_partition_idx;
-                }
-            }
-        }
-        self.partition_correction(&mut partition);
-        Ok(partition)
-    }
-
-    fn n_parts(&self) -> usize {
-        self.n_parts
-    }
-
-    fn graph(&self) -> &CSRGraph {
-        &self.graph
-    }
-}
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "metis")]
@@ -785,8 +795,8 @@ mod tests {
     use crate::mesh::{
         Mesh, Mesh2d, Mesh3d, box_mesh,
         partition::{
-            HilbertPartitioner, KMeansPartitioner2d, KMeansPartitioner3d, Partitioner,
-            RCMPartitioner,
+            BFSPartitionner, HilbertBallPartitioner, HilbertPartitioner, KMeansPartitioner2d,
+            KMeansPartitioner3d, Partitioner, RCMPartitioner,
         },
         rectangle_mesh,
     };
@@ -801,6 +811,34 @@ mod tests {
 
         assert!(partitioner.partition_quality(&parts) < 0.06);
         assert!(partitioner.partition_imbalance(&parts) < 0.002);
+    }
+    #[test]
+    fn test_hilbertb() {
+        let msh: Mesh3d = box_mesh(1.0, 10, 1.0, 15, 1.0, 20);
+        let msh = msh.random_shuffle();
+
+        let partitioner = HilbertBallPartitioner::new(&msh, 4, None).unwrap();
+        let mut parts = partitioner.compute().unwrap();
+        partitioner.partition_correction(&mut parts);
+        assert!(partitioner.partition_quality(&parts) < 0.1);
+        assert!(partitioner.partition_imbalance(&parts) < 0.008);
+    }
+    #[test]
+    fn test_bfs() {
+        let msh: Mesh3d = box_mesh(1.0, 10, 1.0, 15, 1.0, 20);
+        let msh = msh.random_shuffle();
+
+        let partitioner = BFSPartitionner::new(&msh, 4, None).unwrap();
+        let mut parts = partitioner.compute().unwrap();
+        for i in 0..4 {
+            let part = msh.get_partition(i).mesh;
+            let cc = part.vertex_to_vertices().connected_components().unwrap();
+            let n_cc = cc.iter().copied().max().unwrap() + 1;
+            println!("Nombre de composantes Connexes BFS {} ", n_cc)
+        }
+        partitioner.partition_correction(&mut parts);
+        assert!(partitioner.partition_quality(&parts) < 0.1);
+        assert!(partitioner.partition_imbalance(&parts) < 0.1);
     }
 
     #[test]

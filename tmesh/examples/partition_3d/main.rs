@@ -45,6 +45,10 @@ fn main() -> Result<()> {
     let fname = "geom3d.mesh";
     let fname = Path::new(fname);
 
+    let output_dir = Path::new("Global_Partitionnement");
+    if !output_dir.exists() {
+        std::fs::create_dir(output_dir)?;
+    }
     if !fname.exists() {
         std::fs::write("geom3d.geo", GEO_FILE)?;
 
@@ -61,12 +65,10 @@ fn main() -> Result<()> {
             String::from_utf8(output.stderr).unwrap()
         );
     }
-
     let msh = Mesh3d::from_meshb(fname.to_str().unwrap())?;
 
     let (mut msh, _, _, _) = msh.reorder_rcm();
     let (bdy, _): (BoundaryMesh3d, _) = msh.boundary();
-
     msh.write_vtk("geom3d.vtu")?;
     bdy.write_vtk("geom3d_bdy.vtu")?;
 
@@ -75,7 +77,8 @@ fn main() -> Result<()> {
     let n_parts = 4;
 
     let start = Instant::now();
-    let (quality, imbalance) = msh.partition::<HilbertPartitioner>(n_parts, None)?;
+    let (quality, imbalance) = msh.partition::<HilbertBallPartitioner>(n_parts, None)?;
+    msh.write_vtk("Hilbert.vtu");
     let t = start.elapsed();
     println!(
         "HilbertPartitioner: {:.2e}s, quality={:.2e}, imbalance={:.2e}",
