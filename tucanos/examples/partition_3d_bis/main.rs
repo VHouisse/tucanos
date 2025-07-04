@@ -7,7 +7,7 @@ use tmesh::{
     Result,
     mesh::{
         Mesh,
-        partition::{BFSPartitionner, HilbertBallPartitioner},
+        partition::{BFSPartitionner, BFSWRPartitionner, HilbertBallPartitioner},
     },
 };
 use tucanos::{
@@ -191,6 +191,21 @@ pub fn main() -> Result<()> {
     let t = start.elapsed();
     println!(
         "BFSPartitioner: {:.2e}s, quality={:.2e}, imbalance={:.2e}",
+        t.as_secs_f64(),
+        quality,
+        imbalance
+    );
+    print_partition_cc(&msh, n_parts);
+
+    let weights = estimator.compute(&msh, &m);
+    let start = Instant::now();
+    let (quality, imbalance) = msh.partition::<BFSWRPartitionner>(n_parts, Some(weights))?;
+    let file_name = format!("Partitionned_BFSWR.vtu");
+    let output_path = output_dir.join(&file_name);
+    let _ = msh.write_vtk(output_path.to_str().unwrap());
+    let t = start.elapsed();
+    println!(
+        "BFSWRPartitioner: {:.2e}s, quality={:.2e}, imbalance={:.2e}",
         t.as_secs_f64(),
         quality,
         imbalance

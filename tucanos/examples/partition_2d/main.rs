@@ -7,7 +7,9 @@ use tmesh::{
     Result,
     mesh::{
         Mesh,
-        partition::{BFSPartitionner, HilbertBallPartitioner, HilbertPartitioner},
+        partition::{
+            BFSPartitionner, BFSWRPartitionner, HilbertBallPartitioner, HilbertPartitioner,
+        },
     },
 };
 use tucanos::{
@@ -143,11 +145,11 @@ pub fn main() -> Result<()> {
             String::from_utf8(output.stderr).unwrap()
         );
     }
-    let mut msh = test_mesh_2d().split().split().split();
+    let mut msh = test_mesh_2d().split().split().split().split();
 
     println!("# of elements: {}", msh.n_elems());
 
-    let n_parts = 4;
+    let n_parts = 8;
     let h = get_h(&msh).unwrap();
     let m: Vec<_> = h.iter().map(|h_val| IsoMetric::<2>::from(*h_val)).collect();
     msh.compute_volumes();
@@ -191,6 +193,21 @@ pub fn main() -> Result<()> {
     let t = start.elapsed();
     println!(
         "BFSPartitioner: {:.2e}s, quality={:.2e}, imbalance={:.2e}",
+        t.as_secs_f64(),
+        quality,
+        imbalance
+    );
+    print_partition_cc(&msh, n_parts);
+
+    let weights = estimator.compute(&msh, &m);
+    let start = Instant::now();
+    let (quality, imbalance) = msh.partition::<BFSWRPartitionner>(n_parts, Some(weights))?;
+    let file_name = format!("Partitionned_BFSWR.vtu");
+    let output_path = output_dir.join(&file_name);
+    let _ = msh.write_vtk(output_path.to_str().unwrap());
+    let t = start.elapsed();
+    println!(
+        "BFSWRPartitioner: {:.2e}s, quality={:.2e}, imbalance={:.2e}",
         t.as_secs_f64(),
         quality,
         imbalance

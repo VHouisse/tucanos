@@ -229,49 +229,100 @@ pub trait Partitioner: Sized + Send + Sync {
     // }
     // }
 }
-// pub struct BFSWRPartitionner {
-//     n_parts: usize,
-//     graph: CSRGraph,
-//     ids: Vec<usize>,
-//     weights: Vec<f64>,
-// }
+pub struct BFSWRPartitionner {
+    n_parts: usize,
+    graph: CSRGraph,
+    ids: Vec<usize>,
+    weights: Vec<f64>,
+}
 
-// impl Partitioner for BFSWRPartitionner {
-//     fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
-//         msh: &M,
-//         n_parts: usize,
-//         weights: Option<Vec<f64>>,
-//     ) -> Result<Self>
-//     where
-//         Cell<C>: Simplex<C>,
-//         Face<F>: Simplex<F>,
-//     {
-//         let faces = msh.all_faces();
-//         let graph = msh.element_pairs(&faces);
+impl Partitioner for BFSWRPartitionner {
+    fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
+        msh: &M,
+        n_parts: usize,
+        weights: Option<Vec<f64>>,
+    ) -> Result<Self>
+    where
+        Cell<C>: Simplex<C>,
+        Face<F>: Simplex<F>,
+    {
+        let faces = msh.all_faces();
+        let graph = msh.element_pairs(&faces);
 
-//         let centers = msh.gelems().map(|ge| cell_center(&ge));
-//         let ids = hilbert_indices(centers);
-//         let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
-//         Ok(Self {
-//             n_parts,
-//             graph,
-//             ids,
-//             weights,
-//         })
-//     }
+        let centers = msh.gelems().map(|ge| cell_center(&ge));
+        let ids = hilbert_indices(centers);
+        let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
+        Ok(Self {
+            n_parts,
+            graph,
+            ids,
+            weights,
+        })
+    }
 
-//     fn compute(&self) -> Result<Vec<usize>> {
-//         todo!()
-//     }
+    fn compute(&self) -> Result<Vec<usize>> {
+        let target_weight = self.weights.iter().copied().sum::<f64>() / self.n_parts() as f64;
+        let mut res = vec![0; self.weights.len()];
+        let n_elems = self.weights.len();
+        let mut assigned_elements: HashSet<usize> = HashSet::new();
+        let mut current_partition_idx = 0;
+        let mut current_work_partition = 0.0;
+        let mut queue: VecDeque<usize> = VecDeque::new();
 
-//     fn n_parts(&self) -> usize {
-//         self.n_parts
-//     }
+        let mut next_unassigned_elem_root = 0;
 
-//     fn graph(&self) -> &CSRGraph {
-//         &self.graph
-//     }
-// }
+        while assigned_elements.len() < n_elems && current_partition_idx < self.n_parts() {
+            while next_unassigned_elem_root < n_elems
+                && assigned_elements.contains(&(self.ids[next_unassigned_elem_root as usize]))
+            {
+                next_unassigned_elem_root += 1;
+            }
+
+            if next_unassigned_elem_root == n_elems {
+                break;
+            }
+
+            let start_elem_id = next_unassigned_elem_root as usize;
+            queue.push_back(self.ids[start_elem_id]);
+            assigned_elements.insert(self.ids[start_elem_id]);
+
+            while let Some(current_elem_id) = queue.pop_front() {
+                let elem_work = self.weights[current_elem_id as usize];
+
+                if current_work_partition + elem_work > target_weight
+                    && current_partition_idx + 1 < self.n_parts()
+                {
+                    current_partition_idx += 1;
+                    current_work_partition = 0.0;
+                    println!("Element faisant la bascule {}", current_elem_id);
+                    queue.clear();
+                }
+
+                res[current_elem_id as usize] = current_partition_idx as usize;
+                current_work_partition += elem_work;
+
+                for &neighbor_elem_id in self.graph.row(current_elem_id).iter() {
+                    if !assigned_elements.contains(&neighbor_elem_id) {
+                        assigned_elements.insert(neighbor_elem_id);
+                        queue.push_back(neighbor_elem_id);
+                    }
+                }
+            }
+            if queue.is_empty() {
+                next_unassigned_elem_root = 0;
+            }
+        }
+
+        Ok(res)
+    }
+    fn n_parts(&self) -> usize {
+        self.n_parts
+    }
+
+    fn graph(&self) -> &CSRGraph {
+        &self.graph
+    }
+}
 
 pub struct BFSPartitionner {
     n_parts: usize,
@@ -355,6 +406,7 @@ impl Partitioner for BFSPartitionner {
                 current_work_partition = 0.0;
             }
         }
+        Self::partition_correction(&self, &mut res);
 
         Ok(res)
     }
