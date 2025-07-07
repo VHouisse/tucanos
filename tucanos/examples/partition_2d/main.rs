@@ -149,7 +149,7 @@ pub fn main() -> Result<()> {
 
     println!("# of elements: {}", msh.n_elems());
 
-    let n_parts = 8;
+    let n_parts = 4;
     let h = get_h(&msh).unwrap();
     let m: Vec<_> = h.iter().map(|h_val| IsoMetric::<2>::from(*h_val)).collect();
     msh.compute_volumes();

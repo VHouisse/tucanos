@@ -284,6 +284,9 @@ impl Partitioner for BFSWRPartitionner {
 
             let start_elem_id = next_unassigned_elem_root as usize;
             queue.push_back(self.ids[start_elem_id]);
+            if current_partition_idx == 0 {
+                println!("Premier élément : :: {}", self.ids[start_elem_id])
+            }
             assigned_elements.insert(self.ids[start_elem_id]);
 
             while let Some(current_elem_id) = queue.pop_front() {
@@ -294,7 +297,9 @@ impl Partitioner for BFSWRPartitionner {
                 {
                     current_partition_idx += 1;
                     current_work_partition = 0.0;
-                    println!("Element faisant la bascule {}", current_elem_id);
+                    for &elem_id_in_queue in queue.iter() {
+                        assigned_elements.remove(&elem_id_in_queue);
+                    }
                     queue.clear();
                 }
 

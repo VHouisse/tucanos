@@ -7,7 +7,9 @@ use tmesh::{
     Result,
     mesh::{
         Mesh,
-        partition::{BFSPartitionner, BFSWRPartitionner, HilbertBallPartitioner},
+        partition::{
+            BFSPartitionner, BFSWRPartitionner, HilbertBallPartitioner, HilbertPartitioner,
+        },
     },
 };
 use tucanos::{
@@ -154,7 +156,7 @@ pub fn main() -> Result<()> {
     let estimator = TotoCostEstimator::<3, Tetrahedron, IsoMetric<3>>::new();
     let weights = estimator.compute(&msh, &m);
     let start = Instant::now();
-    let (quality, imbalance) = msh.partition::<HilbertBallPartitioner>(n_parts, Some(weights))?;
+    let (quality, imbalance) = msh.partition::<HilbertPartitioner>(n_parts, Some(weights))?;
     let file_name = format!("Partitionned_Hilbert.vtu");
     let output_path = output_dir.join(&file_name);
     let _ = msh.write_vtk(output_path.to_str().unwrap());
