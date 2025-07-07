@@ -864,9 +864,9 @@ where
         weights: Option<Vec<f64>>,
     ) -> Result<(f64, f64)> {
         let partitioner = P::new(self, n_parts, weights)?;
-        let parts = partitioner.compute()?;
+        let mut parts = partitioner.compute()?;
         assert_eq!(parts.len(), self.n_elems());
-
+        partitioner.partition_correction(&mut parts);
         let quality = partitioner.partition_quality(&parts);
         let imbalance = partitioner.partition_imbalance(&parts);
 

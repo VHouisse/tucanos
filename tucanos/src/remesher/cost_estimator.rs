@@ -5,6 +5,8 @@ use crate::{
     mesh::{Elem, SimplexMesh},
     metric::{AnisoMetric2d, HasImpliedMetric, IsoMetric, Metric},
 };
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::IntoParallelRefIterator;
 
 pub trait ElementCostEstimator<const D: usize, E: Elem, M: Metric<D>>: Send + Sync {
     // fn new(msh: &SimplexMesh<D, E>, m: &[M]) -> Self;
@@ -88,45 +90,24 @@ where
     >>::ImpliedMetricType;
 
     fn compute(&self, msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64> {
-        let implied_metrics: Vec<Self::CurrentImpliedMetricType> = msh
-            .par_gelems()
-            .map(|ge| ge.calculate_implied_metric())
-            .collect();
+        let weights: Vec<_> = msh
+            .par_gelems() // Commence avec l'itérateur parallèle des éléments géométriques
+            .zip(m.par_iter()) // Zipe avec l'itérateur parallèle des métriques initiales
+            .zip(msh.get_elem_volumes().unwrap().par_iter()) // Zipe avec les volumes (en parallèle aussi pour cohérence)
+            // Le 'map' suivant traite un tuple: ((ge, p_m_ref), vol_ref)
+            .map(|((ge, p_m_ref), vol_ref)| {
+                let implied_metric = ge.calculate_implied_metric(); // Calcul de la métrique implicite
+                let converted_p_m: Self::CurrentImpliedMetricType = (*p_m_ref).into(); // Conversion de la métrique initiale
+                let intersected_metric = implied_metric.intersect(&converted_p_m); // Intersection des métriques
 
-        assert_eq!(implied_metrics.len(), m.len());
-        let intersected_metrics: Vec<Self::CurrentImpliedMetricType> = implied_metrics
-            .iter()
-            .zip(m.iter())
-            .map(|(implied_metrics_ref, _p_m_ref)| {
-                let tmp = *_p_m_ref;
-                let tmp: Self::CurrentImpliedMetricType = tmp.into();
-                implied_metrics_ref.intersect(&tmp)
+                // Calcul des densités
+                let d_initial_metric = p_m_ref.density();
+                let d_actual_metric = implied_metric.density();
+                let d_intersected = intersected_metric.density();
+
+                work_eval(d_initial_metric, d_actual_metric, d_intersected, *vol_ref) // Appel de work_eval
             })
-            .collect();
-
-        let d_initial_metric: Vec<_> = m
-            .iter()
-            .map(|_p_metric_ref| _p_metric_ref.density())
-            .collect();
-
-        let d_actual_metric: Vec<_> = implied_metrics
-            .iter()
-            .map(|implied_metrics_ref| implied_metrics_ref.density())
-            .collect();
-
-        let d_intersected: Vec<_> = intersected_metrics
-            .iter()
-            .map(|_intersected_metric_ref| _intersected_metric_ref.density())
-            .collect();
-        let volumes = msh.get_elem_volumes().unwrap().to_vec();
-
-        let weights: Vec<_> = d_initial_metric
-            .iter()
-            .zip(d_actual_metric.iter())
-            .zip(d_intersected.iter())
-            .zip(volumes.iter())
-            .map(|(((_d_i_m, _d_a_m), _d_id), vol)| work_eval(*_d_i_m, *_d_a_m, *_d_id, *vol))
-            .collect();
+            .collect(); // Collecte le résultat final dans un Vec
 
         weights
     }
