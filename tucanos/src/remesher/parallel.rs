@@ -163,10 +163,13 @@ where
         let now = Instant::now();
         let estimator = TotoCostEstimator::new();
         let weights = estimator.compute(&mesh, &metric);
-        println!("Weights {:?}", weights);
+        // println!("Weights {:?}", weights);
         let (partition_quality, partition_imbalance) =
             mesh.partition_elems::<P>(n_parts, Some(weights))?;
-
+        // println!(
+        // "Qualité de la partition : {}, Répartition du travail : {}",
+        // partition_quality, partition_imbalance
+        // );
         let partition_time = now.elapsed().as_secs_f64();
 
         // Get the partition interfaces
@@ -195,7 +198,7 @@ where
             partition_time,
             partition_quality,
             partition_imbalance,
-            debug: false,
+            debug: true,
             _partitioner: PhantomData,
             _cost_estimator: PhantomData,
         })
@@ -612,7 +615,7 @@ mod tests {
         test_domain_decomposition_2d::<
             HilbertPartitioner,
             TotoCostEstimator<2, Triangle, IsoMetric<2>>,
-        >(false, 4)
+        >(true, 4)
     }
 
     #[test]

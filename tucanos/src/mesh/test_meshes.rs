@@ -18,7 +18,7 @@ pub fn test_mesh_2d() -> SimplexMesh<2, Triangle> {
         Point::<2>::new(0., 1.),
     ];
     let elems = vec![Triangle::new(0, 1, 2), Triangle::new(0, 2, 3)];
-    let etags = vec![1, 2];
+    let etags = vec![1, 1];
     let faces = vec![
         Edge::new(0, 1),
         Edge::new(1, 2),

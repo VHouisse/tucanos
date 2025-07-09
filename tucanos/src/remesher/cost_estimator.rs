@@ -48,9 +48,9 @@ where
 
 fn work_eval(initial_density: f64, actual_density: f64, intersected_density: f64, vol: f64) -> f64 {
     // Set up to csts and evaluate real coeff
-    let insert_c: f64 = 1.0;
-    let collapse_c: f64 = 1.3;
-    let optimization_c: f64 = 3.3;
+    let insert_c: f64 = 1.0; //1.0
+    let collapse_c: f64 = 1.3; //1.3 
+    let optimization_c: f64 = 3.3; //3.3
     let work = vol
         * (insert_c * (intersected_density - initial_density)
             + collapse_c * (intersected_density - actual_density)
@@ -91,24 +91,20 @@ where
 
     fn compute(&self, msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64> {
         let weights: Vec<_> = msh
-            .par_gelems() // Commence avec l'itérateur parallèle des éléments géométriques
-            .zip(m.par_iter()) // Zipe avec l'itérateur parallèle des métriques initiales
-            .zip(msh.get_elem_volumes().unwrap().par_iter()) // Zipe avec les volumes (en parallèle aussi pour cohérence)
-            // Le 'map' suivant traite un tuple: ((ge, p_m_ref), vol_ref)
+            .par_gelems()
+            .zip(m.par_iter())
+            .zip(msh.get_elem_volumes().unwrap().par_iter())
             .map(|((ge, p_m_ref), vol_ref)| {
-                let implied_metric = ge.calculate_implied_metric(); // Calcul de la métrique implicite
-                let converted_p_m: Self::CurrentImpliedMetricType = (*p_m_ref).into(); // Conversion de la métrique initiale
-                let intersected_metric = implied_metric.intersect(&converted_p_m); // Intersection des métriques
-
-                // Calcul des densités
+                let implied_metric = ge.calculate_implied_metric();
+                let converted_p_m: Self::CurrentImpliedMetricType = (*p_m_ref).into();
+                let intersected_metric = implied_metric.intersect(&converted_p_m);
                 let d_initial_metric = p_m_ref.density();
                 let d_actual_metric = implied_metric.density();
                 let d_intersected = intersected_metric.density();
 
-                work_eval(d_initial_metric, d_actual_metric, d_intersected, *vol_ref) // Appel de work_eval
+                work_eval(d_initial_metric, d_actual_metric, d_intersected, *vol_ref)
             })
-            .collect(); // Collecte le résultat final dans un Vec
-
+            .collect();
         weights
     }
 }

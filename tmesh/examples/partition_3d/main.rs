@@ -77,7 +77,7 @@ fn main() -> Result<()> {
     let n_parts = 4;
 
     let start = Instant::now();
-    let (quality, imbalance) = msh.partition::<HilbertBallPartitioner>(n_parts, None)?;
+    let (quality, imbalance) = msh.partition::<HilbertPartitioner>(n_parts, None)?;
     msh.write_vtk("Hilbert.vtu");
     let t = start.elapsed();
     println!(

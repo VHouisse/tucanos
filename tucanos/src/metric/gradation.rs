@@ -83,7 +83,8 @@ impl<const D: usize, E: Elem> SimplexMesh<D, E> {
                         let e = self.vert(i_neigh as Idx) - v0;
                         let m = &tmp[i_neigh];
                         let g = Self::edge_gradation(m_new, m, &e);
-                        if g < 1.01 * beta {
+                        if g < 1.01 * beta * f64::MAX {
+                            // Todo Change it supp *f64::MAX
                             continue;
                         }
                         fixed = true;
