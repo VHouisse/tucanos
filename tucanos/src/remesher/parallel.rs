@@ -157,8 +157,7 @@ where
     ///
     /// NB: the mesh element tags will be modified
     pub fn new(mut mesh: SimplexMesh<D, E>, metric: Vec<M>, n_parts: Idx) -> Result<Self> {
-        assert_eq!(mesh.n_elems() as usize, metric.len());
-
+        assert_eq!(mesh.n_verts() as usize, metric.len());
         // Partition
         let now = Instant::now();
         let estimator = TotoCostEstimator::new();

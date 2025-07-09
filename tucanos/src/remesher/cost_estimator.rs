@@ -90,21 +90,21 @@ where
     >>::ImpliedMetricType;
 
     fn compute(&self, msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64> {
-        let weights: Vec<_> = msh
-            .par_gelems()
-            .zip(m.par_iter())
-            .zip(msh.get_elem_volumes().unwrap().par_iter())
-            .map(|((ge, p_m_ref), vol_ref)| {
+        msh.par_elems()
+            .map(|e| {
+                let ge = msh.gelem(e);
                 let implied_metric = ge.calculate_implied_metric();
-                let converted_p_m: Self::CurrentImpliedMetricType = (*p_m_ref).into();
-                let intersected_metric = implied_metric.intersect(&converted_p_m);
-                let d_initial_metric = p_m_ref.density();
-                let d_actual_metric = implied_metric.density();
+                let vol = ge.vol();
+                let weight = 1.0 / E::N_VERTS as f64;
+                let mean_metric = M::interpolate(e.iter().map(|i| (weight, m[i as usize])));
+                let mean_metric: Self::CurrentImpliedMetricType = mean_metric.into();
+                let intersected_metric = implied_metric.intersect(&mean_metric);
+                let d_initial_metric = implied_metric.density();
+                let d_actual_metric = mean_metric.density();
                 let d_intersected = intersected_metric.density();
 
                 work_eval(d_initial_metric, d_actual_metric, d_intersected, *vol_ref)
             })
-            .collect();
-        weights
+            .collect()
     }
 }
