@@ -35,26 +35,6 @@ const RADIUS_SQ: f64 = 0.1 * 1.0;
 const H_INSIDE_CIRCLE: f64 = 0.01;
 const H_OUTSIDE_CIRCLE: f64 = 0.5;
 
-pub fn get_isotropic_metric_circular_fine(
-    mesh: &SimplexMesh<2, Triangle>,
-) -> Result<Vec<IsoMetric<2>>> {
-    let mut iso_metrics: Vec<IsoMetric<2>> = Vec::with_capacity(mesh.n_elems() as usize);
-
-    for g_elem in mesh.gelems() {
-        let center_point = g_elem.center();
-        let x = center_point[0];
-        let y = center_point[1];
-
-        let mut dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2);
-        dist_sq = dist_sq.sqrt();
-        if dist_sq <= RADIUS_SQ {
-            iso_metrics.push(IsoMetric::<2>::from(H_INSIDE_CIRCLE));
-        } else {
-            iso_metrics.push(IsoMetric::<2>::from(H_OUTSIDE_CIRCLE));
-        }
-    }
-    Ok(iso_metrics)
-}
 fn main() -> Result<()> {
     let fname = "geom3d.mesh";
     let fname = Path::new(fname);
@@ -84,7 +64,27 @@ fn main() -> Result<()> {
         "Nombre d'éléments contenus dans le maillage {} ",
         msh.n_elems()
     );
-    let m = get_isotropic_metric_circular_fine(&msh).unwrap();
+
+    let h = |p: Point<2>| {
+        let mut res = 0;
+        let x = p[0];
+        let y = p[1];
+        let mut dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2);
+        dist_sq = dist_sq.sqrt();
+        if dist_sq <= RADIUS_SQ {
+            res = H_INSIDE_CIRCLE
+        } else {
+            res = H_OUTSIDE_CIRCLE
+        }
+        res
+    };
+    let m = msh
+        .verts()
+        .map(|v| {
+            let metric_value = h(v); // Calculez la valeur scalaire (f64) de la métrique en utilisant ce point
+            IsoMetric::<2>::from(metric_value)
+        })
+        .collect();
     let (bdy, _) = msh.boundary();
     let _topo = msh.compute_topology();
     let geom = LinearGeometry::<2, Edge>::new(&msh, bdy).unwrap();

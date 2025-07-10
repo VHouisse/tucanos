@@ -273,7 +273,7 @@ impl Partitioner for BFSWRPartitionner {
 
         while assigned_elements.len() < n_elems && current_partition_idx < self.n_parts() {
             while next_unassigned_elem_root < n_elems
-                && assigned_elements.contains(&(self.ids[next_unassigned_elem_root as usize]))
+                && assigned_elements.contains(&(self.ids[next_unassigned_elem_root]))
             {
                 next_unassigned_elem_root += 1;
             }
@@ -282,33 +282,32 @@ impl Partitioner for BFSWRPartitionner {
                 break;
             }
 
-            let start_elem_id = next_unassigned_elem_root as usize;
+            let start_elem_id = next_unassigned_elem_root;
             queue.push_back(self.ids[start_elem_id]);
             if current_partition_idx == 0 {
-                println!("Premier élément : :: {}", self.ids[start_elem_id])
+                println!("Premier élément : :: {}", self.ids[start_elem_id]);
             }
             assigned_elements.insert(self.ids[start_elem_id]);
 
             while let Some(current_elem_id) = queue.pop_front() {
-                let elem_work = self.weights[current_elem_id as usize];
+                let elem_work = self.weights[current_elem_id];
 
                 if current_work_partition + elem_work > target_weight
                     && current_partition_idx + 1 < self.n_parts()
                 {
                     current_partition_idx += 1;
                     current_work_partition = 0.0;
-                    for &elem_id_in_queue in queue.iter() {
+                    for &elem_id_in_queue in &queue {
                         assigned_elements.remove(&elem_id_in_queue);
                     }
                     queue.clear();
                 }
 
-                res[current_elem_id as usize] = current_partition_idx as usize;
+                res[current_elem_id] = current_partition_idx;
                 current_work_partition += elem_work;
 
-                for &neighbor_elem_id in self.graph.row(current_elem_id).iter() {
-                    if !assigned_elements.contains(&neighbor_elem_id) {
-                        assigned_elements.insert(neighbor_elem_id);
+                for &neighbor_elem_id in self.graph.row(current_elem_id) {
+                    if assigned_elements.insert(neighbor_elem_id) {
                         queue.push_back(neighbor_elem_id);
                     }
                 }
@@ -373,7 +372,7 @@ impl Partitioner for BFSPartitionner {
 
         while assigned_elements.len() < n_elems && current_partition_idx < self.n_parts() {
             while next_unassigned_elem_root < n_elems
-                && assigned_elements.contains(&(next_unassigned_elem_root as usize))
+                && assigned_elements.contains(&{ next_unassigned_elem_root })
             {
                 next_unassigned_elem_root += 1;
             }
@@ -382,12 +381,12 @@ impl Partitioner for BFSPartitionner {
                 break;
             }
 
-            let start_elem_id = next_unassigned_elem_root as usize;
+            let start_elem_id = next_unassigned_elem_root;
             queue.push_back(self.ids[start_elem_id]);
             assigned_elements.insert(self.ids[start_elem_id]);
 
             while let Some(current_elem_id) = queue.pop_front() {
-                let elem_work = self.weights[current_elem_id as usize];
+                let elem_work = self.weights[current_elem_id];
 
                 if current_work_partition + elem_work > target_weight
                     && current_partition_idx + 1 < self.n_parts()
@@ -396,12 +395,11 @@ impl Partitioner for BFSPartitionner {
                     current_work_partition = 0.0;
                 }
 
-                res[current_elem_id as usize] = current_partition_idx as usize;
+                res[current_elem_id] = current_partition_idx;
                 current_work_partition += elem_work;
 
-                for &neighbor_elem_id in self.graph.row(current_elem_id).iter() {
-                    if !assigned_elements.contains(&neighbor_elem_id) {
-                        assigned_elements.insert(neighbor_elem_id);
+                for &neighbor_elem_id in self.graph.row(current_elem_id) {
+                    if assigned_elements.insert(neighbor_elem_id) {
                         queue.push_back(neighbor_elem_id);
                     }
                 }
@@ -411,7 +409,7 @@ impl Partitioner for BFSPartitionner {
                 current_work_partition = 0.0;
             }
         }
-        Self::partition_correction(&self, &mut res);
+        Self::partition_correction(self, &mut res);
 
         Ok(res)
     }
@@ -891,7 +889,7 @@ mod tests {
             let part = msh.get_partition(i).mesh;
             let cc = part.vertex_to_vertices().connected_components().unwrap();
             let n_cc = cc.iter().copied().max().unwrap() + 1;
-            println!("Nombre de composantes Connexes BFS {} ", n_cc)
+            println!("Nombre de composantes Connexes BFS {n_cc} ");
         }
         partitioner.partition_correction(&mut parts);
         assert!(partitioner.partition_quality(&parts) < 0.1);
