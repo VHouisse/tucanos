@@ -1,41 +1,58 @@
+//! Mesh partition example
+use clap::Parser;
+#[cfg(feature = "metis")]
 use clap::Parser;
 use std::{path::Path, time::Instant};
+
 #[cfg(feature = "metis")]
 use tmesh::mesh::partition::{MetisKWay, MetisPartitioner, MetisRecursive};
-use tmesh::{Result, mesh::Mesh};
-use tucanos::{
-    geometry::LinearGeometry,
-    mesh::{Edge, Point, Triangle, test_meshes::test_mesh_2d},
-    metric::{AnisoMetric, AnisoMetric2d, IsoMetric},
-    remesher::{NoCostEstimator, ParallelRemesher, ParallelRemesherParams, RemesherParams},
+use tmesh::{
+    Result,
+    mesh::{
+        Mesh,
+        partition::{BFSPartitionner, BFSWRPartitionner, HilbertBallPartitioner, Partitioner},
+    },
 };
+
+use tucanos::{
+    geometry::{LinearGeometry, curvature::HasCurvature},
+    mesh::{Edge, Elem, HasTmeshImpl, Point, SimplexMesh, Triangle, test_meshes::test_mesh_2d},
+    metric::{AnisoMetric, AnisoMetric2d, HasImpliedMetric, IsoMetric, Metric},
+    remesher::{
+        ElementCostEstimator, NoCostEstimator, ParallelRemesher, ParallelRemesherParams,
+        RemesherParams, TotoCostEstimator,
+    },
+};
+
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Effectue un remaillage 2D avec des options configurables.", long_about = None)]
 struct Args {
-    #[arg(short, long, default_value_t = 7)] // Default splits for 2D might be different
+    #[arg(short, long, default_value_t = 5)]
     num_splits: usize,
 
     #[arg(short, long, default_value_t = String::from("iso"))]
     metric_type: String,
 
     #[arg(short, long, default_value_t = 4)]
-    n_parts: usize,
+    n_parts: u32,
 
     #[arg(short, long, default_value_t = String::from("Toto"))]
     cost_estimator: String,
+
+    #[arg(short, long, default_value_t = String::from("HilbertBallPartitionner"))]
+    partitionner: String,
 }
 
 const CENTER_X: f64 = 0.3;
 const CENTER_Y: f64 = 0.3;
-const RADIUS: f64 = 0.1; // Consistent naming with 3D
-const RADIUS_SQ_ACTUAL: f64 = RADIUS * RADIUS; // Consistent naming with 3D
+const RADIUS: f64 = 0.1;
+const RADIUS_SQ_ACTUAL: f64 = RADIUS * RADIUS;
+const H_INSIDE_CIRCLE_ISO: f64 = 0.005;
+const H_OUTSIDE_CIRCLE_ISO: f64 = 0.1;
+const H_INSIDE_CIRCLE_ANISO: f64 = 0.01;
+const H_OUTSIDE_CIRCLE_ANISO: f64 = 0.2;
 
-const H_INSIDE_CIRCLE_ISO: f64 = 0.001; // Consistent naming with 3D
-const H_OUTSIDE_CIRCLE_ISO: f64 = 0.1; // Consistent naming with 3D
-const H_INSIDE_CIRCLE_ANISO: f64 = 0.002; // Added for aniso example, adjust as needed
-const H_OUTSIDE_CIRCLE_ANISO: f64 = 0.2; // Added for aniso example, adjust as needed
-
-fn calculate_iso_metric_2d(p: Point<2>) -> f64 {
+fn calculate_iso_metric(p: Point<2>) -> f64 {
     let mut res = H_OUTSIDE_CIRCLE_ISO;
     let x = p[0];
     let y = p[1];
@@ -47,8 +64,8 @@ fn calculate_iso_metric_2d(p: Point<2>) -> f64 {
     res
 }
 
-/// Calculates the anisotropic metric value for a given 2D point.
-fn calculate_aniso_metric_2d(p: Point<2>) -> f64 {
+/// Calculates the anisotropic metric value for a given point.
+fn calculate_aniso_metric(p: Point<2>) -> f64 {
     let mut res = H_OUTSIDE_CIRCLE_ANISO;
     let x = p[0];
     let y = p[1];
@@ -57,9 +74,43 @@ fn calculate_aniso_metric_2d(p: Point<2>) -> f64 {
     if dist_sq <= RADIUS_SQ_ACTUAL {
         res = H_INSIDE_CIRCLE_ANISO;
     }
-    // Simple anisotropic factor for demonstration, adjust as needed
     res * (1.0 + 0.5 * (x - CENTER_X).abs())
 }
+
+fn perform_remeshing<
+    const D: usize,
+    E: Elem,
+    M: Metric<D>
+        + Into<<E::Geom<D, IsoMetric<D>> as HasImpliedMetric<D, IsoMetric<D>>>::ImpliedMetricType>,
+    P: Partitioner,
+    C: ElementCostEstimator<D, E, M>,
+>(
+    mut msh: SimplexMesh<D, E>,
+    geom: &LinearGeometry<D, E::Face>,
+    metrics: Vec<M>,
+    cost_estimator_name: &str,
+    partitioner_name: &str,
+    n_parts: u32,
+) -> Result<()>
+where
+    SimplexMesh<D, E>: HasTmeshImpl<D, E>,
+    SimplexMesh<D, E::Face>: HasTmeshImpl<D, E::Face> + HasCurvature<D>,
+    E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
+{
+    msh.compute_volumes();
+    let remesher = ParallelRemesher::<D, E, M, P, C>::new(msh, metrics, n_parts)?;
+    let dd_params = ParallelRemesherParams::default();
+    let params = RemesherParams::default();
+    let time = Instant::now();
+    _ = remesher.remesh(geom, params, &dd_params).unwrap();
+    let t2 = time.elapsed();
+    println!(
+        "Temps de remaillage ({t2:?}) avec estimateur de coût {cost_estimator_name} et partitionneur {partitioner_name}"
+    );
+    Ok(())
+}
+
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -71,74 +122,309 @@ fn main() -> Result<()> {
     for _ in 0..args.num_splits {
         msh = msh.split();
     }
-    println!(
-        "Nombre d'éléments contenus dans le maillage {} ",
-        msh.n_elems()
-    );
+    let (bdy, _) = msh.boundary();
+    let _topo = msh.compute_topology();
+    let geom = LinearGeometry::<2, Edge>::new(&msh, bdy).unwrap();
+    msh.compute_volumes();
+
     match args.metric_type.as_str() {
         "iso" => {
             let m: Vec<IsoMetric<2>> = msh
                 .verts()
-                .map(|v| IsoMetric::<2>::from(calculate_iso_metric_2d(v)))
+                .map(|v| IsoMetric::<2>::from(calculate_iso_metric(v)))
                 .collect();
-            let (bdy, _) = msh.boundary();
-            let _topo = msh.compute_topology();
-            let geom = LinearGeometry::<2, Edge>::new(&msh, bdy).unwrap();
-            msh.compute_volumes();
-            let remesher = ParallelRemesher::<
-                2,
-                Triangle,
-                IsoMetric<2>,
-                tmesh::mesh::partition::HilbertPartitioner,
-                NoCostEstimator<2, Triangle, IsoMetric<2>>,
-            >::new(msh, m, 8)?;
-            let file_name = "Partitionned_Hilbert.vtu".to_string();
-            let output_path = output_dir.join(&file_name);
-            remesher
-                .partitionned_mesh()
-                .write_vtk(output_path.to_str().unwrap())?;
-            let dd_params = ParallelRemesherParams::default();
-            let params = RemesherParams::default();
-            let time = Instant::now();
-            (msh, _, _) = remesher.remesh(&geom, params, &dd_params).unwrap();
-            let t2 = time.elapsed();
-            println!("Temps de remaillage Avec Estimation du travail {t2:?}");
-            let file_name = "Remeshed_Hilbert.vtu".to_string();
-            let output_path = output_dir.join(&file_name);
-            msh.write_vtk(output_path.to_str().unwrap())?;
+
+            if args.cost_estimator.as_str() == "Nocost" {
+                match args.partitionner.as_str() {
+                    "HilbertBallPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            HilbertBallPartitioner,
+                            NoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "HilbertBallPartitionner",
+                            args.n_parts,
+                        )?;
+                    }
+                    "BFSPartitioner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            BFSPartitionner,
+                            NoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh, &geom, m, "Nocost", "BFSPartitioner", args.n_parts
+                        )?;
+                    }
+                    "BFSWRPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            BFSWRPartitionner,
+                            NoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh, &geom, m, "Nocost", "BFSWRPartitionner", args.n_parts
+                        )?;
+                    }
+                    #[cfg(feature = "metis")]
+                    "MetisKWay" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            MetisKWay,
+                            NoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh, &geom, m, "Nocost", "MetisKWay", args.n_parts
+                        )?;
+                    }
+                    #[cfg(feature = "metis")]
+                    "MetisRecursive" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            MetisRecursive,
+                            NoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh, &geom, m, "Nocost", "MetisRecursive", args.n_parts
+                        )?;
+                    }
+                    _ => {
+                        return Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Partitionneur non valide",
+                        )));
+                    }
+                }
+            } else {
+                // Default to TotoCostEstimator if not "Nocost"
+                match args.partitionner.as_str() {
+                    "HilbertBallPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            HilbertBallPartitioner,
+                            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "HilbertBallPartitionner",
+                            args.n_parts,
+                        )?;
+                    }
+                    "BFSPartitioner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            BFSPartitionner,
+                            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh, &geom, m, "Toto", "BFSPartitioner", args.n_parts
+                        )?;
+                    }
+                    "BFSWRPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            BFSWRPartitionner,
+                            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh, &geom, m, "Toto", "BFSWRPartitionner", args.n_parts
+                        )?;
+                    }
+                    #[cfg(feature = "metis")]
+                    "MetisKWay" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            MetisKWay,
+                            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(msh, &geom, m, "Toto", "MetisKWay", args.n_parts)?;
+                    }
+                    #[cfg(feature = "metis")]
+                    "MetisRecursive" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            MetisRecursive,
+                            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh, &geom, m, "Toto", "MetisRecursive", args.n_parts
+                        )?;
+                    }
+                    _ => {
+                        return Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Partitionneur non valide",
+                        )));
+                    }
+                }
+            }
         }
         "aniso" => {
             let m: Vec<AnisoMetric2d> = msh
                 .verts()
-                .map(|v| {
-                    AnisoMetric2d::from_iso(&IsoMetric::<2>::from(calculate_aniso_metric_2d(v)))
-                })
+                .map(|v| AnisoMetric2d::from_iso(&IsoMetric::<2>::from(calculate_aniso_metric(v))))
                 .collect();
-            let (bdy, _) = msh.boundary();
-            let _topo = msh.compute_topology();
-            let geom = LinearGeometry::<2, Edge>::new(&msh, bdy).unwrap();
-            msh.compute_volumes();
-            let remesher = ParallelRemesher::<
-                2,
-                Triangle,
-                AnisoMetric2d,
-                tmesh::mesh::partition::HilbertPartitioner,
-                NoCostEstimator<2, Triangle, AnisoMetric2d>,
-            >::new(msh, m, 8)?;
-            let file_name = "Partitionned_Hilbert.vtu".to_string();
-            let output_path = output_dir.join(&file_name);
-            remesher
-                .partitionned_mesh()
-                .write_vtk(output_path.to_str().unwrap())?;
-            let dd_params = ParallelRemesherParams::default();
-            let params = RemesherParams::default();
-            let time = Instant::now();
-            (msh, _, _) = remesher.remesh(&geom, params, &dd_params).unwrap();
-            let t2 = time.elapsed();
-            println!("Temps de remaillage Avec Estimation du travail {t2:?}");
-            let file_name = "Remeshed_Hilbert.vtu".to_string();
-            let output_path = output_dir.join(&file_name);
-            msh.write_vtk(output_path.to_str().unwrap())?;
+
+            if args.cost_estimator.as_str() == "Nocost" {
+                match args.partitionner.as_str() {
+                    "HilbertBallPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            HilbertBallPartitioner,
+                            NoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "HilbertBallPartitionner",
+                            args.n_parts,
+                        )?;
+                    }
+                    "BFSPartitioner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            BFSPartitionner,
+                            NoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh, &geom, m, "Nocost", "BFSPartitioner", args.n_parts
+                        )?;
+                    }
+                    "BFSWRPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            BFSWRPartitionner,
+                            NoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh, &geom, m, "Nocost", "BFSWRPartitionner", args.n_parts
+                        )?;
+                    }
+                    #[cfg(feature = "metis")]
+                    "MetisKWay" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            MetisKWay,
+                            NoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh, &geom, m, "Nocost", "MetisKWay", args.n_parts
+                        )?;
+                    }
+                    #[cfg(feature = "metis")]
+                    "MetisRecursive" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            MetisRecursive,
+                            NoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh, &geom, m, "Nocost", "MetisRecursive", args.n_parts
+                        )?;
+                    }
+                    _ => {
+                        return Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Partitionneur non valide",
+                        )));
+                    }
+                }
+            } else {
+                // Default to TotoCostEstimator if not "Nocost"
+                match args.partitionner.as_str() {
+                    "HilbertBallPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            HilbertBallPartitioner,
+                            TotoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "HilbertBallPartitionner",
+                            args.n_parts,
+                        )?;
+                    }
+                    "BFSPartitioner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            BFSPartitionner,
+                            TotoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh, &geom, m, "Toto", "BFSPartitioner", args.n_parts
+                        )?;
+                    }
+                    "BFSWRPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            BFSWRPartitionner,
+                            TotoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh, &geom, m, "Toto", "BFSWRPartitionner", args.n_parts
+                        )?;
+                    }
+                    #[cfg(feature = "metis")]
+                    "MetisKWay" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            MetisKWay,
+                            TotoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(msh, &geom, m, "Toto", "MetisKWay", args.n_parts)?;
+                    }
+                    #[cfg(feature = "metis")]
+                    "MetisRecursive" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            MetisRecursive,
+                            TotoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh, &geom, m, "Toto", "MetisRecursive", args.n_parts
+                        )?;
+                    }
+                    _ => {
+                        return Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "Partitionneur non valide",
+                        )));
+                    }
+                }
+            }
         }
         _ => {
             return Err(Box::new(std::io::Error::new(
