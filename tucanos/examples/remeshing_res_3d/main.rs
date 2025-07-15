@@ -10,7 +10,10 @@ use tmesh::{
     Result,
     mesh::{
         Mesh,
-        partition::{BFSPartitionner, BFSWRPartitionner, HilbertBallPartitioner, Partitioner},
+        partition::{
+            BFSPartitionner, BFSWRPartitionner, HilbertBallPartitioner, HilbertPartitioner,
+            Partitioner,
+        },
     },
 };
 
@@ -96,6 +99,7 @@ fn perform_remeshing<
     cost_estimator_name: &str, // Renamed to avoid confusion with the generic type C
     partitioner_name: &str,    // Added partitioner name for printout
     n_parts: u32,
+    metric_type_arg: &str,
 ) -> Result<()>
 where
     SimplexMesh<D, E>: HasTmeshImpl<D, E>,
@@ -103,6 +107,7 @@ where
     E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
 {
     msh.compute_volumes();
+    let n_elements = msh.n_elems();
     let remesher = ParallelRemesher::<D, E, M, P, C>::new(msh, metrics, n_parts)?;
     let dd_params = ParallelRemesherParams::default();
     let params = RemesherParams::default();
@@ -110,7 +115,7 @@ where
     _ = remesher.remesh(geom, params, &dd_params).unwrap();
     let t2 = time.elapsed();
     println!(
-        "Temps de remaillage ({t2:?}) avec estimateur de coût {cost_estimator_name} et partitionneur {partitioner_name}"
+        "DATA,D={D},metric_type={metric_type_arg},cost_estimator={cost_estimator_name},partitioner={partitioner_name},num_elements={n_elements},time_seconds={t2:?}"
     );
     Ok(())
 }
@@ -140,6 +145,23 @@ fn main() -> Result<()> {
 
             if args.cost_estimator.as_str() == "Nocost" {
                 match args.partitionner.as_str() {
+                    "HilbertPartitionner" => {
+                        perform_remeshing::<
+                            3,
+                            Tetrahedron,
+                            IsoMetric<3>,
+                            HilbertPartitioner,
+                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "NoCost",
+                            "HilbertPartitionner",
+                            args.n_parts,
+                            "iso",
+                        )?;
+                    }
                     "HilbertBallPartitionner" => {
                         perform_remeshing::<
                             3,
@@ -154,6 +176,7 @@ fn main() -> Result<()> {
                             "Nocost",
                             "HilbertBallPartitionner",
                             args.n_parts,
+                            "iso",
                         )?;
                     }
                     "BFSPartitionner" => {
@@ -164,7 +187,13 @@ fn main() -> Result<()> {
                             BFSPartitionner,
                             NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
-                            msh, &geom, m, "Nocost", "BFSPartitionner", args.n_parts
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "BFSPartitionner",
+                            args.n_parts,
+                            "iso",
                         )?;
                     }
                     "BFSWRPartitionner" => {
@@ -175,33 +204,39 @@ fn main() -> Result<()> {
                             BFSWRPartitionner,
                             NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
-                            msh, &geom, m, "Nocost", "BFSWRPartitionner", args.n_parts
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "BFSWRPartitionner",
+                            args.n_parts,
+                            "iso",
                         )?;
                     }
-                    #[cfg(feature = "metis")]
-                    "MetisKWay" => {
-                        perform_remeshing::<
-                            3,
-                            Tetrahedron,
-                            IsoMetric<3>,
-                            MetisKWay,
-                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
-                        >(
-                            msh, &geom, m, "Nocost", "MetisKWay", args.n_parts
-                        )?;
-                    }
-                    #[cfg(feature = "metis")]
-                    "MetisRecursive" => {
-                        perform_remeshing::<
-                            3,
-                            Tetrahedron,
-                            IsoMetric<3>,
-                            MetisRecursive,
-                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
-                        >(
-                            msh, &geom, m, "Nocost", "MetisRecursive", args.n_parts
-                        )?;
-                    }
+                    // #[cfg(feature = "metis")]
+                    // "MetisKWay" => {
+                    //     perform_remeshing::<
+                    //         3,
+                    //         Tetrahedron,
+                    //         IsoMetric<3>,
+                    //         MetisKWay,
+                    //         NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                    //     >(
+                    //         msh, &geom, m, "Nocost", "MetisKWay", args.n_parts
+                    //     )?;
+                    // }
+                    // #[cfg(feature = "metis")]
+                    // "MetisRecursive" => {
+                    //     perform_remeshing::<
+                    //         3,
+                    //         Tetrahedron,
+                    //         IsoMetric<3>,
+                    //         MetisRecursive,
+                    //         NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                    //     >(
+                    //         msh, &geom, m, "Nocost", "MetisRecursive", args.n_parts
+                    //     )?;
+                    // }
                     _ => {
                         return Err(Box::new(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
@@ -212,6 +247,23 @@ fn main() -> Result<()> {
             } else {
                 // Default to TotoCostEstimator if not "Nocost"
                 match args.partitionner.as_str() {
+                    "HilbertPartitionner" => {
+                        perform_remeshing::<
+                            3,
+                            Tetrahedron,
+                            IsoMetric<3>,
+                            HilbertPartitioner,
+                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "HilbertPartitionner",
+                            args.n_parts,
+                            "iso",
+                        )?;
+                    }
                     "HilbertBallPartitionner" => {
                         perform_remeshing::<
                             3,
@@ -226,9 +278,10 @@ fn main() -> Result<()> {
                             "Toto",
                             "HilbertBallPartitionner",
                             args.n_parts,
+                            "iso",
                         )?;
                     }
-                    "BFSPartitioner" => {
+                    "BFSPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
@@ -236,7 +289,13 @@ fn main() -> Result<()> {
                             BFSPartitionner,
                             TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
-                            msh, &geom, m, "Toto", "BFSPartitioner", args.n_parts
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "BFSPartitionner",
+                            args.n_parts,
+                            "iso",
                         )?;
                     }
                     "BFSWRPartitionner" => {
@@ -247,31 +306,37 @@ fn main() -> Result<()> {
                             BFSWRPartitionner,
                             TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
-                            msh, &geom, m, "Toto", "BFSWRPartitionner", args.n_parts
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "BFSWRPartitionner",
+                            args.n_parts,
+                            "iso",
                         )?;
                     }
-                    #[cfg(feature = "metis")]
-                    "MetisKWay" => {
-                        perform_remeshing::<
-                            3,
-                            Tetrahedron,
-                            IsoMetric<3>,
-                            MetisKWay,
-                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
-                        >(msh, &geom, m, "Toto", "MetisKWay", args.n_parts)?;
-                    }
-                    #[cfg(feature = "metis")]
-                    "MetisRecursive" => {
-                        perform_remeshing::<
-                            3,
-                            Tetrahedron,
-                            IsoMetric<3>,
-                            MetisRecursive,
-                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
-                        >(
-                            msh, &geom, m, "Toto", "MetisRecursive", args.n_parts
-                        )?;
-                    }
+                    // #[cfg(feature = "metis")]
+                    // "MetisKWay" => {
+                    //     perform_remeshing::<
+                    //         3,
+                    //         Tetrahedron,
+                    //         IsoMetric<3>,
+                    //         MetisKWay,
+                    //         TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                    //     >(msh, &geom, m, "Toto", "MetisKWay", args.n_parts)?;
+                    // }
+                    // #[cfg(feature = "metis")]
+                    // "MetisRecursive" => {
+                    //     perform_remeshing::<
+                    //         3,
+                    //         Tetrahedron,
+                    //         IsoMetric<3>,
+                    //         MetisRecursive,
+                    //         TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                    //     >(
+                    //         msh, &geom, m, "Toto", "MetisRecursive", args.n_parts
+                    //     )?;
+                    // }
                     _ => {
                         return Err(Box::new(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
@@ -303,9 +368,27 @@ fn main() -> Result<()> {
                             "Nocost",
                             "HilbertBallPartitionner",
                             args.n_parts,
+                            "aniso",
                         )?;
                     }
-                    "BFSPartitioner" => {
+                    "HilbertPartitionner" => {
+                        perform_remeshing::<
+                            3,
+                            Tetrahedron,
+                            AnisoMetric3d,
+                            HilbertPartitioner,
+                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "NoCost",
+                            "HilbertPartitionner",
+                            args.n_parts,
+                            "aniso",
+                        )?;
+                    }
+                    "BFSPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
@@ -313,7 +396,13 @@ fn main() -> Result<()> {
                             BFSPartitionner,
                             NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
-                            msh, &geom, m, "Nocost", "BFSPartitioner", args.n_parts
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "BFSPartitionner",
+                            args.n_parts,
+                            "aniso",
                         )?;
                     }
                     "BFSWRPartitionner" => {
@@ -324,33 +413,39 @@ fn main() -> Result<()> {
                             BFSWRPartitionner,
                             NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
-                            msh, &geom, m, "Nocost", "BFSWRPartitionner", args.n_parts
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "BFSWRPartitionner",
+                            args.n_parts,
+                            "aniso",
                         )?;
                     }
-                    #[cfg(feature = "metis")]
-                    "MetisKWay" => {
-                        perform_remeshing::<
-                            3,
-                            Tetrahedron,
-                            AnisoMetric3d,
-                            MetisKWay,
-                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
-                        >(
-                            msh, &geom, m, "Nocost", "MetisKWay", args.n_parts
-                        )?;
-                    }
-                    #[cfg(feature = "metis")]
-                    "MetisRecursive" => {
-                        perform_remeshing::<
-                            3,
-                            Tetrahedron,
-                            AnisoMetric3d,
-                            MetisRecursive,
-                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
-                        >(
-                            msh, &geom, m, "Nocost", "MetisRecursive", args.n_parts
-                        )?;
-                    }
+                    // #[cfg(feature = "metis")]
+                    // "MetisKWay" => {
+                    //     perform_remeshing::<
+                    //         3,
+                    //         Tetrahedron,
+                    //         AnisoMetric3d,
+                    //         MetisKWay,
+                    //         NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                    //     >(
+                    //         msh, &geom, m, "Nocost", "MetisKWay", args.n_parts
+                    //     )?;
+                    // }
+                    // #[cfg(feature = "metis")]
+                    // "MetisRecursive" => {
+                    //     perform_remeshing::<
+                    //         3,
+                    //         Tetrahedron,
+                    //         AnisoMetric3d,
+                    //         MetisRecursive,
+                    //         NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                    //     >(
+                    //         msh, &geom, m, "Nocost", "MetisRecursive", args.n_parts
+                    //     )?;
+                    // }
                     _ => {
                         return Err(Box::new(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
@@ -361,6 +456,23 @@ fn main() -> Result<()> {
             } else {
                 // Default to TotoCostEstimator if not "Nocost"
                 match args.partitionner.as_str() {
+                    "HilbertPartitionner" => {
+                        perform_remeshing::<
+                            3,
+                            Tetrahedron,
+                            AnisoMetric3d,
+                            HilbertPartitioner,
+                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "HilbertPartitionner",
+                            args.n_parts,
+                            "aniso",
+                        )?;
+                    }
                     "HilbertBallPartitionner" => {
                         perform_remeshing::<
                             3,
@@ -375,9 +487,10 @@ fn main() -> Result<()> {
                             "Toto",
                             "HilbertBallPartitionner",
                             args.n_parts,
+                            "aniso",
                         )?;
                     }
-                    "BFSPartitioner" => {
+                    "BFSPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
@@ -385,7 +498,13 @@ fn main() -> Result<()> {
                             BFSPartitionner,
                             TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
-                            msh, &geom, m, "Toto", "BFSPartitioner", args.n_parts
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "BFSPartitionner",
+                            args.n_parts,
+                            "aniso",
                         )?;
                     }
                     "BFSWRPartitionner" => {
@@ -396,31 +515,37 @@ fn main() -> Result<()> {
                             BFSWRPartitionner,
                             TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
-                            msh, &geom, m, "Toto", "BFSWRPartitionner", args.n_parts
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "BFSWRPartitionner",
+                            args.n_parts,
+                            "aniso",
                         )?;
                     }
-                    #[cfg(feature = "metis")]
-                    "MetisKWay" => {
-                        perform_remeshing::<
-                            3,
-                            Tetrahedron,
-                            AnisoMetric3d,
-                            MetisKWay,
-                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
-                        >(msh, &geom, m, "Toto", "MetisKWay", args.n_parts)?;
-                    }
-                    #[cfg(feature = "metis")]
-                    "MetisRecursive" => {
-                        perform_remeshing::<
-                            3,
-                            Tetrahedron,
-                            AnisoMetric3d,
-                            MetisRecursive,
-                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
-                        >(
-                            msh, &geom, m, "Toto", "MetisRecursive", args.n_parts
-                        )?;
-                    }
+                    // #[cfg(feature = "metis")]
+                    // "MetisKWay" => {
+                    //     perform_remeshing::<
+                    //         3,
+                    //         Tetrahedron,
+                    //         AnisoMetric3d,
+                    //         MetisKWay,
+                    //         TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                    //     >(msh, &geom, m, "Toto", "MetisKWay", args.n_parts)?;
+                    // }
+                    // #[cfg(feature = "metis")]
+                    // "MetisRecursive" => {
+                    //     perform_remeshing::<
+                    //         3,
+                    //         Tetrahedron,
+                    //         AnisoMetric3d,
+                    //         MetisRecursive,
+                    //         TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                    //     >(
+                    //         msh, &geom, m, "Toto", "MetisRecursive", args.n_parts
+                    //     )?;
+                    // }
                     _ => {
                         return Err(Box::new(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,

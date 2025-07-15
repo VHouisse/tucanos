@@ -30,12 +30,9 @@ pub trait Partitioner: Sized + Send + Sync {
     /// Get the total weight of all the partitions
     fn partition_weights(&self, parts: &[usize]) -> Vec<f64> {
         let mut res = vec![0.0; self.n_parts()];
-        let mut verts_per_part = vec![0; self.n_parts()];
         for (&i_part, w) in parts.iter().zip(self.weights()) {
             res[i_part] += w;
-            verts_per_part[i_part] += 1;
         }
-        println!("Elements per part {verts_per_part:?}");
         res
     }
     /// Compute the imbalance between the partitions
@@ -77,7 +74,7 @@ pub trait Partitioner: Sized + Send + Sync {
             let sgraph = self.graph().subgraph(elem_ids.iter().copied());
             let cc = sgraph.connected_components().unwrap();
             let n_cc = cc.iter().copied().max().unwrap_or(0) + 1;
-            println!("{i_part} -> {n_cc}");
+            //println!("{i_part} -> {n_cc}");
             if n_cc > 1 {
                 let mut cc_weights = vec![0.0; n_cc];
                 let mut n_faces = vec![vec![0; self.n_parts()]; n_cc];
@@ -285,9 +282,6 @@ impl Partitioner for BFSWRPartitionner {
 
             let start_elem_id = next_unassigned_elem_root;
             queue.push_back(self.ids[start_elem_id]);
-            if current_partition_idx == 0 {
-                println!("Premier élément : :: {}", self.ids[start_elem_id]);
-            }
             assigned_elements.insert(self.ids[start_elem_id]);
 
             while let Some(current_elem_id) = queue.pop_front() {
@@ -472,7 +466,6 @@ impl Partitioner for HilbertBallPartitioner {
         let mut current_partition_idx = 0;
         let mut current_work_partition = 0.0;
         assert_eq!(self.elems_ids.len(), self.weights.len());
-        println!("Target weight : {target_weight}");
         for &i_vert in &self.vertex_ids {
             let element_in_ball = self.v2e.row(i_vert);
             for &i_elem in element_in_ball {

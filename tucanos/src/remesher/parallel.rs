@@ -74,7 +74,6 @@ pub struct RemeshingInfo {
 }
 impl RemeshingInfo {
     fn print_summary_remesh_stats(&self) {
-        println!("\n--- Résumé des Statistiques ---");
         let mut total_splits = 0;
         let mut total_splits_fails = 0;
         let mut total_collapses = 0;
@@ -407,7 +406,7 @@ where
                     time: now.elapsed().as_secs_f64(),
                     remesh_stats: stats,
                 };
-                info.print_summary();
+                //info.print_summary();
                 drop(info);
 
                 // Flag elements with n_layers of the interfaces with tag 2, other with tag 1
