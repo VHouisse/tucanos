@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub trait ElementCostEstimator<const D: usize, E: Elem, M: Metric<D>>: Send + Sync {
-    // fn new(msh: &SimplexMesh<D, E>, m: &[M]) -> Self;
+    fn new(m: &[M]) -> Self;
     // fn compute(&self) -> Vec<f64>;
     fn compute(&self, msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64>;
     type CurrentImpliedMetricType;
@@ -22,13 +22,12 @@ pub struct NoCostEstimator<const D: usize, E: Elem, M: Metric<D>> {
 impl<const D: usize, E: Elem, M: Metric<D>> ElementCostEstimator<D, E, M>
     for NoCostEstimator<D, E, M>
 {
-    // fn new(msh: &SimplexMesh<D, E>, _m: &[M]) -> Self {
-    //     Self {
-    //         n_elems: msh.n_elems(),
-    //         _e: PhantomData,
-    //         _m: PhantomData,
-    //     }
-    // }
+    fn new(_m: &[M]) -> Self {
+        Self {
+            _e: PhantomData,
+            _m: PhantomData,
+        }
+    }
 
     fn compute(&self, msh: &SimplexMesh<D, E>, _m: &[M]) -> Vec<f64> {
         vec![1.0; msh.n_elems() as usize]
@@ -68,7 +67,7 @@ where
     E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
 {
     #[must_use]
-    pub const fn new() -> Self {
+    pub const fn new(_m: &[M]) -> Self {
         Self {
             _e: PhantomData,
             _m: PhantomData,
@@ -85,13 +84,12 @@ impl<
 where
     E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
 {
-    // fn new(msh: &SimplexMesh<D, E>, _m: &[M]) -> Self {
-    //     Self {
-    //         n_elems: msh.n_elems(),
-    //         _e: PhantomData,
-    //         _m: PhantomData,
-    //     }
-    // }
+    fn new(_m: &[M]) -> Self {
+        Self {
+            _e: PhantomData,
+            _m: PhantomData,
+        }
+    }
     type CurrentImpliedMetricType = <<E as Elem>::Geom<D, IsoMetric<D>> as HasImpliedMetric<
         D,
         IsoMetric<D>,

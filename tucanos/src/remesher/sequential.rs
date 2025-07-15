@@ -658,7 +658,11 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
     }
 
     /// Perform a remeshing iteration
-    pub fn remesh<G: Geometry<D>>(&mut self, params: &RemesherParams, geom: &G) -> Result<()> {
+    pub fn remesh<G: Geometry<D>>(
+        &mut self,
+        params: &RemesherParams,
+        geom: &G,
+    ) -> Result<Vec<StepStats>> {
         debug!("Adapt the mesh");
         let now = Instant::now();
 
@@ -678,7 +682,8 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         }
         debug!("Done in {}s", now.elapsed().as_secs_f32());
         self.print_stats();
-        Ok(())
+        let stats_to_return = self.stats();
+        Ok(stats_to_return.to_vec())
     }
 
     /// Print length and quality stats on the mesh / metric

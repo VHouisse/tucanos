@@ -867,10 +867,9 @@ where
         let parts = partitioner.compute()?;
         assert_eq!(parts.len(), self.n_elems());
         //partitioner.partition_correction(&mut parts);
+        self.set_partition(&parts);
         let quality = partitioner.partition_quality(&parts);
         let imbalance = partitioner.partition_imbalance(&parts);
-
-        self.set_partition(&parts);
 
         Ok((quality, imbalance))
     }

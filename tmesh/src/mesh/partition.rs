@@ -26,15 +26,16 @@ pub trait Partitioner: Sized + Send + Sync {
     /// Get the element-to-element graph
     fn graph(&self) -> &CSRGraph;
     /// Get the element weights
-    fn weights(&self) -> impl Iterator<Item = f64> {
-        (0..self.graph().n()).map(|_| 1.0)
-    }
+    fn weights(&self) -> impl Iterator<Item = f64> + '_;
     /// Get the total weight of all the partitions
     fn partition_weights(&self, parts: &[usize]) -> Vec<f64> {
         let mut res = vec![0.0; self.n_parts()];
+        let mut verts_per_part = vec![0; self.n_parts()];
         for (&i_part, w) in parts.iter().zip(self.weights()) {
             res[i_part] += w;
+            verts_per_part[i_part] += 1;
         }
+        println!("Elements per part {verts_per_part:?}");
         res
     }
     /// Compute the imbalance between the partitions
@@ -326,6 +327,10 @@ impl Partitioner for BFSWRPartitionner {
     fn graph(&self) -> &CSRGraph {
         &self.graph
     }
+
+    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+        self.weights.iter().copied()
+    }
 }
 
 pub struct BFSPartitionner {
@@ -421,8 +426,19 @@ impl Partitioner for BFSPartitionner {
     fn graph(&self) -> &CSRGraph {
         &self.graph
     }
+    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+        self.weights.iter().copied()
+    }
 }
 
+pub struct HilbertBallPartitioner {
+    n_parts: usize,
+    graph: CSRGraph,
+    vertex_ids: Vec<usize>,
+    elems_ids: Vec<usize>,
+    weights: Vec<f64>,
+    v2e: CSRGraph,
+}
 impl Partitioner for HilbertBallPartitioner {
     fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
         msh: &M,
@@ -435,13 +451,15 @@ impl Partitioner for HilbertBallPartitioner {
     {
         let faces = msh.all_faces();
         let graph = msh.element_pairs(&faces);
+        let (_, vertex_ids, elems_ids, _) = msh.reorder_hilbert();
 
-        let ids = hilbert_indices(msh.verts());
+        //let ids = hilbert_indices(msh.verts());
         let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
         Ok(Self {
             n_parts,
             graph,
-            ids,
+            vertex_ids,
+            elems_ids,
             weights,
             v2e: msh.vertex_to_elems(),
         })
@@ -453,14 +471,16 @@ impl Partitioner for HilbertBallPartitioner {
         let mut partition = vec![usize::MAX; self.weights.len()];
         let mut current_partition_idx = 0;
         let mut current_work_partition = 0.0;
-
-        //To parallelize
-        for &i_vert in &self.ids {
+        assert_eq!(self.elems_ids.len(), self.weights.len());
+        println!("Target weight : {target_weight}");
+        for &i_vert in &self.vertex_ids {
             let element_in_ball = self.v2e.row(i_vert);
             for &i_elem in element_in_ball {
                 if partition[i_elem] == usize::MAX {
                     let elem_work = self.weights[i_elem];
                     if (current_work_partition + elem_work) > target_weight {
+                        // to do Compute diff between target weight and actual partition weight to balance the best as possible
+                        // let distance = target_weight - current_work_partition;
                         current_work_partition = elem_work; // change
                         if current_partition_idx < self.n_parts - 1 {
                             current_partition_idx += 1;
@@ -473,7 +493,6 @@ impl Partitioner for HilbertBallPartitioner {
                 }
             }
         }
-        self.partition_correction(&mut partition);
         Ok(partition)
     }
 
@@ -483,6 +502,10 @@ impl Partitioner for HilbertBallPartitioner {
 
     fn graph(&self) -> &CSRGraph {
         &self.graph
+    }
+
+    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+        self.weights.iter().copied()
     }
 }
 /// Simple geometric partitionner based on the Hilbert indices of the element centers
@@ -540,6 +563,10 @@ impl Partitioner for HilbertPartitioner {
     fn graph(&self) -> &CSRGraph {
         &self.graph
     }
+
+    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+        self.weights.iter().copied()
+    }
 }
 
 /// Simple partioner based on the RCM ordering of the element-to-element
@@ -595,6 +622,10 @@ impl Partitioner for RCMPartitioner {
 
     fn graph(&self) -> &CSRGraph {
         &self.graph
+    }
+
+    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+        self.weights.iter().copied()
     }
 }
 
@@ -660,6 +691,10 @@ impl Partitioner for KMeansPartitioner2d {
     fn graph(&self) -> &CSRGraph {
         &self.graph
     }
+
+    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+        self.weights.iter().copied()
+    }
 }
 
 /// KMeans partitionner based on `coupe` (3d)
@@ -723,6 +758,10 @@ impl Partitioner for KMeansPartitioner3d {
 
     fn graph(&self) -> &CSRGraph {
         &self.graph
+    }
+
+    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+        self.weights.iter().copied()
     }
 }
 
@@ -833,14 +872,6 @@ impl<T: MetisPartMethod> Partitioner for MetisPartitioner<T> {
     fn graph(&self) -> &CSRGraph {
         &self.graph
     }
-}
-
-pub struct HilbertBallPartitioner {
-    n_parts: usize,
-    graph: CSRGraph,
-    ids: Vec<usize>,
-    weights: Vec<f64>,
-    v2e: CSRGraph,
 }
 
 #[cfg(test)]

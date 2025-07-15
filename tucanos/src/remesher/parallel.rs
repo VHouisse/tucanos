@@ -1,11 +1,14 @@
 use super::ElementCostEstimator;
 
+use crate::remesher::NoCostEstimator;
+use crate::remesher::TotoCostEstimator;
+use crate::remesher::stats::StepStats;
 use crate::{
     Idx, Result, Tag,
     geometry::Geometry,
     mesh::{Elem, HasTmeshImpl, SimplexMesh, SubSimplexMesh},
     metric::{HasImpliedMetric, IsoMetric, Metric},
-    remesher::{Remesher, RemesherParams, cost_estimator::TotoCostEstimator},
+    remesher::{Remesher, RemesherParams},
 };
 use log::{debug, warn};
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
@@ -69,6 +72,50 @@ pub struct RemeshingInfo {
     pub n_verts_init: Idx,
     pub n_verts_final: Idx,
     pub time: f64,
+    pub remesh_stats: Vec<StepStats>,
+}
+impl RemeshingInfo {
+    fn print_summary_remesh_stats(&self) {
+        println!("\n--- Résumé des Statistiques ---");
+        let mut total_splits = 0;
+        let mut total_splits_fails = 0;
+        let mut total_collapses = 0;
+        let mut total_collapses_fails = 0;
+        let mut total_swaps = 0;
+        let mut total_swaps_fails = 0;
+        let mut total_smooth_fails = 0;
+        let mut _t_init = 0;
+
+        for step_stat in self.remesh_stats.clone() {
+            match step_stat {
+                StepStats::Split(s) => {
+                    total_splits += s.get_n_splits();
+                    total_splits_fails += s.get_n_fails();
+                }
+                StepStats::Collapse(s) => {
+                    total_collapses += s.get_n_collapses();
+                    total_collapses_fails += s.get_n_fails();
+                }
+                StepStats::Swap(s) => {
+                    total_swaps += s.get_n_swaps();
+                    total_swaps_fails += s.get_n_fails();
+                }
+                StepStats::Smooth(s) => {
+                    total_smooth_fails += s.get_n_fails();
+                }
+                StepStats::Init(_s) => {
+                    _t_init = 0;
+                }
+            }
+        }
+        println!(
+            "\nSplits: {total_splits} Splits echoués : {total_splits_fails}\n
+             Collapses: {total_collapses} Collapses échoués : {total_collapses_fails}\n
+             Swaps: {total_swaps}  Swaps échoués : {total_swaps_fails}\n  
+             Smooth Fails: {total_smooth_fails}"
+        );
+        println!("------------------------------------");
+    }
 }
 
 #[derive(Default, Serialize)]
@@ -98,6 +145,7 @@ impl ParallelRemeshingInfo {
                     "{indent} partition {i}: {} -> {} verts, {:.2e} secs",
                     s.n_verts_init, s.n_verts_final, s.time
                 );
+                s.print_summary_remesh_stats();
             }
             if let Some(ifc) = &self.interface {
                 print!("{indent} interface: ");
@@ -143,13 +191,18 @@ pub struct ParallelRemesher<
     _cost_estimator: PhantomData<C>,
 }
 
-impl<const D: usize, E: Elem, M: Metric<D>, P: Partitioner, C: ElementCostEstimator<D, E, M>>
-    ParallelRemesher<D, E, M, P, C>
+impl<
+    const D: usize,
+    E: Elem,
+    M: Metric<D>
+        + Into<<E::Geom<D, IsoMetric<D>> as HasImpliedMetric<D, IsoMetric<D>>>::ImpliedMetricType>,
+    P: Partitioner,
+    C: ElementCostEstimator<D, E, M>,
+> ParallelRemesher<D, E, M, P, C>
 where
     SimplexMesh<D, E>: HasTmeshImpl<D, E>,
     SimplexMesh<D, E::Face>: HasTmeshImpl<D, E::Face>,
     E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
-    M: Into<<E::Geom<D, IsoMetric<D>> as HasImpliedMetric<D, IsoMetric<D>>>::ImpliedMetricType>,
 {
     /// Create a new parallel remesher based on domain decomposition.
     /// If part is `PartitionType::Scotch(n)` or `PartitionType::Metis(n)` the mesh is partitionned into n subdomains using
@@ -159,16 +212,16 @@ where
     pub fn new(mut mesh: SimplexMesh<D, E>, metric: Vec<M>, n_parts: Idx) -> Result<Self> {
         assert_eq!(mesh.n_verts() as usize, metric.len());
         // Partition
+        // Renumbering based on Hilbert
         let now = Instant::now();
-        let estimator = TotoCostEstimator::new();
-        let weights = estimator.compute(&mesh, &metric);
-        // println!("Weights {:?}", weights);
+        let _estimator = NoCostEstimator::<D, E, M>::new(&metric);
+        let estimator = TotoCostEstimator::<D, E, M>::new(&metric);
+        let weights = estimator.compute(&mesh, &metric); //println!("Weights {weights:?}");
         let (partition_quality, partition_imbalance) =
             mesh.partition_elems::<P>(n_parts, Some(weights))?;
-        // println!(
-        // "Qualité de la partition : {}, Répartition du travail : {}",
-        // partition_quality, partition_imbalance
-        // );
+        println!(
+            "Qualité de la partition : {partition_quality}, Répartition du travail : {partition_imbalance}"
+        );
         let partition_time = now.elapsed().as_secs_f64();
 
         // Get the partition interfaces
@@ -197,7 +250,7 @@ where
             partition_time,
             partition_quality,
             partition_imbalance,
-            debug: true,
+            debug: false,
             _partitioner: PhantomData,
             _cost_estimator: PhantomData,
         })
@@ -275,7 +328,7 @@ where
         geom: &G,
         params: &RemesherParams,
         submesh: SubSimplexMesh<D, E>,
-    ) -> (SimplexMesh<D, E>, Vec<M>) {
+    ) -> (SimplexMesh<D, E>, Vec<M>, Vec<StepStats>) {
         let mut local_mesh = submesh.mesh;
 
         // to be consistent with the base topology
@@ -291,9 +344,13 @@ where
             .collect();
         let mut local_remesher = Remesher::new(&local_mesh, &local_m, geom).unwrap();
 
-        local_remesher.remesh(params, geom).unwrap();
+        let stats = local_remesher.remesh(params, geom).unwrap();
 
-        (local_remesher.to_mesh(true), local_remesher.metrics())
+        (
+            local_remesher.to_mesh(true),
+            local_remesher.metrics(),
+            stats,
+        )
     }
 
     /// Remesh using domain decomposition
@@ -343,16 +400,17 @@ where
                 debug!("Remeshing level {level} / partition {i_part}");
                 let n_verts_init = submesh.mesh.n_verts();
                 let now = Instant::now();
-                let (mut local_mesh, local_m) =
+                let (mut local_mesh, local_m, stats) =
                     self.remesh_submesh(&self.metric, geom, &params.clone(), submesh);
-
                 // Get the info
                 let mut info = info.lock().unwrap();
                 info.partitions[i_part] = RemeshingInfo {
                     n_verts_init,
                     n_verts_final: local_mesh.n_verts(),
                     time: now.elapsed().as_secs_f64(),
+                    remesh_stats: stats,
                 };
+                info.print_summary();
                 drop(info);
 
                 // Flag elements with n_layers of the interfaces with tag 2, other with tag 1
@@ -456,6 +514,7 @@ where
                     n_verts_init,
                     n_verts_final: ifc_remesher.n_verts(),
                     time: now.elapsed().as_secs_f64(),
+                    ..Default::default()
                 },
                 partition_time: 0.0,
                 partition_quality: 0.0,

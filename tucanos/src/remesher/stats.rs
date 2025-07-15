@@ -3,7 +3,7 @@ use core::fmt;
 use serde::Serialize;
 
 /// Simple statistics (histogram + mean) to be used on edge lengths and element qualities
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct Stats {
     /// Histogram bins (length = n+1)
     pub bins: Vec<f64>,
@@ -93,7 +93,7 @@ impl fmt::Display for Stats {
 }
 
 /// Statistics on the remesher state
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct RemesherStats {
     /// The # of vertices in the mesh
     n_verts: Idx,
@@ -120,7 +120,7 @@ impl RemesherStats {
 }
 
 /// Statistics for each remeshing step that include `RemesherStats` and additional step-dependent info
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub enum StepStats {
     Init(InitStats),
     Split(SplitStats),
@@ -128,8 +128,19 @@ pub enum StepStats {
     Collapse(CollapseStats),
     Smooth(SmoothStats),
 }
+impl fmt::Display for StepStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Init(_s) => write!(f, "None"),
+            Self::Split(s) => write!(f, "{s}"),
+            Self::Swap(s) => write!(f, "{s}"),
+            Self::Collapse(s) => write!(f, "{s}"),
+            Self::Smooth(s) => write!(f, "{s}"),
+        }
+    }
+}
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct InitStats {
     r_stats: RemesherStats,
 }
@@ -142,7 +153,7 @@ impl InitStats {
     }
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct SplitStats {
     n_splits: Idx,
     n_fails: Idx,
@@ -161,9 +172,24 @@ impl SplitStats {
             r_stats: RemesherStats::new(r),
         }
     }
+    pub const fn get_n_splits(&self) -> Idx {
+        self.n_splits
+    }
+
+    pub const fn get_n_fails(&self) -> Idx {
+        self.n_fails
+    }
+}
+impl fmt::Display for SplitStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //writeln!(f, "  Split Stats:")?;
+        writeln!(f, "    Splits Succeeded: {}", self.n_splits)?;
+        writeln!(f, "    Splits Failed:    {}", self.n_fails)?;
+        Ok(())
+    }
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct SwapStats {
     n_swaps: Idx,
     n_fails: Idx,
@@ -182,9 +208,23 @@ impl SwapStats {
             r_stats: RemesherStats::new(r),
         }
     }
-}
+    pub const fn get_n_swaps(&self) -> Idx {
+        self.n_swaps
+    }
 
-#[derive(Serialize, Clone)]
+    pub const fn get_n_fails(&self) -> Idx {
+        self.n_fails
+    }
+}
+impl fmt::Display for SwapStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //writeln!(f, "  Swap Stats:")?;
+        writeln!(f, "    Swaps Succeeded:  {}", self.n_swaps)?;
+        writeln!(f, "    Swaps Failed:     {}", self.n_fails)?;
+        Ok(())
+    }
+}
+#[derive(Serialize, Clone, Debug)]
 pub struct CollapseStats {
     n_collapses: Idx,
     n_fails: Idx,
@@ -203,9 +243,24 @@ impl CollapseStats {
             r_stats: RemesherStats::new(r),
         }
     }
+    pub const fn get_n_collapses(&self) -> Idx {
+        self.n_collapses
+    }
+
+    pub const fn get_n_fails(&self) -> Idx {
+        self.n_fails
+    }
+}
+impl fmt::Display for CollapseStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //writeln!(f, "  Collapse Stats:")?;
+        writeln!(f, "    Collapses Succeeded: {}", self.n_collapses)?;
+        writeln!(f, "    Collapses Failed:    {}", self.n_fails)?;
+        Ok(())
+    }
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct SmoothStats {
     n_fails: Idx,
     r_stats: RemesherStats,
@@ -217,5 +272,16 @@ impl SmoothStats {
             n_fails,
             r_stats: RemesherStats::new(r),
         }
+    }
+    pub const fn get_n_fails(&self) -> Idx {
+        self.n_fails
+    }
+    // Implémentation de Display pour StepStats
+}
+impl fmt::Display for SmoothStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        //writeln!(f, "  Smooth Stats:")?;
+        writeln!(f, "    Smooth Fails: {}", self.n_fails)?;
+        Ok(())
     }
 }

@@ -8,9 +8,9 @@ use tmesh::mesh::partition::{MetisKWay, MetisPartitioner, MetisRecursive};
 use tmesh::{Result, mesh::Mesh};
 use tucanos::{
     geometry::LinearGeometry,
-    mesh::{Edge, GElem, SimplexMesh, Triangle, test_meshes::test_mesh_2d},
+    mesh::{Edge, Point, Triangle, test_meshes::test_mesh_2d},
     metric::IsoMetric,
-    remesher::{ParallelRemesher, ParallelRemesherParams, RemesherParams, TotoCostEstimator},
+    remesher::{NoCostEstimator, ParallelRemesher, ParallelRemesherParams, RemesherParams},
 };
 /// .geo file to generate the input mesh with gmsh:
 const GEO_FILE: &str = r#"// Gmsh project created on Tue Jun 10 20:58:23 2025
@@ -32,8 +32,8 @@ const CENTER_X: f64 = 0.3;
 const CENTER_Y: f64 = 0.3;
 const RADIUS_SQ: f64 = 0.1 * 1.0;
 
-const H_INSIDE_CIRCLE: f64 = 0.01;
-const H_OUTSIDE_CIRCLE: f64 = 0.5;
+const H_INSIDE_CIRCLE: f64 = 0.001;
+const H_OUTSIDE_CIRCLE: f64 = 0.1;
 
 fn main() -> Result<()> {
     let fname = "geom3d.mesh";
@@ -59,22 +59,27 @@ fn main() -> Result<()> {
             String::from_utf8(output.stderr).unwrap()
         );
     }
-    let mut msh = test_mesh_2d().split().split().split().split().split();
+    let mut msh = test_mesh_2d()
+        .split()
+        .split()
+        .split()
+        .split()
+        .split()
+        .split()
+        .split();
     println!(
         "Nombre d'éléments contenus dans le maillage {} ",
         msh.n_elems()
     );
 
     let h = |p: Point<2>| {
-        let mut res = 0;
+        let mut res = H_OUTSIDE_CIRCLE;
         let x = p[0];
         let y = p[1];
         let mut dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2);
         dist_sq = dist_sq.sqrt();
         if dist_sq <= RADIUS_SQ {
-            res = H_INSIDE_CIRCLE
-        } else {
-            res = H_OUTSIDE_CIRCLE
+            res = H_INSIDE_CIRCLE;
         }
         res
     };
@@ -97,10 +102,10 @@ fn main() -> Result<()> {
         2,
         Triangle,
         IsoMetric<2>,
-        tmesh::mesh::partition::HilbertBallPartitioner,
-        TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+        tmesh::mesh::partition::HilbertPartitioner,
+        NoCostEstimator<2, Triangle, IsoMetric<2>>,
     >::new(msh, m, 8)?;
-    let file_name = format!("Partitionned_Hilbert.vtu");
+    let file_name = "Partitionned_Hilbert.vtu".to_string();
     let output_path = output_dir.join(&file_name);
     remesher
         .partitionned_mesh()
@@ -110,8 +115,8 @@ fn main() -> Result<()> {
     let time = Instant::now();
     (msh, _, _) = remesher.remesh(&geom, params, &dd_params).unwrap();
     let t2 = time.elapsed();
-    println!("Temps de remaillage Avec Estimation du travail {:?}", t2);
-    let file_name = format!("Remeshed_Hilbert.vtu");
+    println!("Temps de remaillage Avec Estimation du travail {t2:?}");
+    let file_name = "Remeshed_Hilbert.vtu".to_string();
     let output_path = output_dir.join(&file_name);
     msh.write_vtk(output_path.to_str().unwrap())?;
     Ok(())
