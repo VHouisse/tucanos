@@ -1,7 +1,5 @@
 use super::ElementCostEstimator;
 
-use crate::remesher::NoCostEstimator;
-use crate::remesher::TotoCostEstimator;
 use crate::remesher::stats::StepStats;
 use crate::{
     Idx, Result, Tag,
@@ -214,8 +212,7 @@ where
         // Partition
         // Renumbering based on Hilbert
         let now = Instant::now();
-        let _estimator = NoCostEstimator::<D, E, M>::new(&metric);
-        let estimator = TotoCostEstimator::<D, E, M>::new(&metric);
+        let estimator = C::new(&metric);
         let weights = estimator.compute(&mesh, &metric); //println!("Weights {weights:?}");
         let (partition_quality, partition_imbalance) =
             mesh.partition_elems::<P>(n_parts, Some(weights))?;

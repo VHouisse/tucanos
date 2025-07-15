@@ -1,123 +1,152 @@
-//! Mesh partition example
-// use rayon::iter::ParallelIterator;
-
-// use rayon::iter::ParallelIterator;
-use std::{path::Path, process::Command, time::Instant};
+use clap::Parser;
+use std::{path::Path, time::Instant};
 #[cfg(feature = "metis")]
 use tmesh::mesh::partition::{MetisKWay, MetisPartitioner, MetisRecursive};
 use tmesh::{Result, mesh::Mesh};
 use tucanos::{
     geometry::LinearGeometry,
     mesh::{Edge, Point, Triangle, test_meshes::test_mesh_2d},
-    metric::IsoMetric,
+    metric::{AnisoMetric, AnisoMetric2d, IsoMetric},
     remesher::{NoCostEstimator, ParallelRemesher, ParallelRemesherParams, RemesherParams},
 };
-/// .geo file to generate the input mesh with gmsh:
-const GEO_FILE: &str = r#"// Gmsh project created on Tue Jun 10 20:58:23 2025
-SetFactory("OpenCASCADE");
-Cone(1) = {0, 0, 0, 1, 0, 0, 0.5, 0.1, 2*Pi};
-Sphere(2) = {0, 0, 0, 0.1, -Pi/2, Pi/2, 2*Pi};
-BooleanDifference{ Curve{2}; Volume{1}; Delete; }{ Volume{2}; Delete; }
-MeshSize {3} = 0.01;
-MeshSize {4} = 0.001;
+#[derive(Parser, Debug)]
+#[command(author, version, about = "Effectue un remaillage 2D avec des options configurables.", long_about = None)]
+struct Args {
+    #[arg(short, long, default_value_t = 7)] // Default splits for 2D might be different
+    num_splits: usize,
 
-Physical Surface("cone", 12) = {1};
-Physical Surface("top", 13) = {2};
-Physical Surface("bottom", 14) = {3};
-Physical Surface("sphere", 15) = {4, 5};
-Physical Volume("E", 16) = {1};
+    #[arg(short, long, default_value_t = String::from("iso"))]
+    metric_type: String,
 
-"#;
+    #[arg(short, long, default_value_t = 4)]
+    n_parts: usize,
+
+    #[arg(short, long, default_value_t = String::from("Toto"))]
+    cost_estimator: String,
+}
+
 const CENTER_X: f64 = 0.3;
 const CENTER_Y: f64 = 0.3;
-const RADIUS_SQ: f64 = 0.1 * 1.0;
+const RADIUS: f64 = 0.1; // Consistent naming with 3D
+const RADIUS_SQ_ACTUAL: f64 = RADIUS * RADIUS; // Consistent naming with 3D
 
-const H_INSIDE_CIRCLE: f64 = 0.001;
-const H_OUTSIDE_CIRCLE: f64 = 0.1;
+const H_INSIDE_CIRCLE_ISO: f64 = 0.001; // Consistent naming with 3D
+const H_OUTSIDE_CIRCLE_ISO: f64 = 0.1; // Consistent naming with 3D
+const H_INSIDE_CIRCLE_ANISO: f64 = 0.002; // Added for aniso example, adjust as needed
+const H_OUTSIDE_CIRCLE_ANISO: f64 = 0.2; // Added for aniso example, adjust as needed
 
+fn calculate_iso_metric_2d(p: Point<2>) -> f64 {
+    let mut res = H_OUTSIDE_CIRCLE_ISO;
+    let x = p[0];
+    let y = p[1];
+    let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2);
+
+    if dist_sq <= RADIUS_SQ_ACTUAL {
+        res = H_INSIDE_CIRCLE_ISO;
+    }
+    res
+}
+
+/// Calculates the anisotropic metric value for a given 2D point.
+fn calculate_aniso_metric_2d(p: Point<2>) -> f64 {
+    let mut res = H_OUTSIDE_CIRCLE_ANISO;
+    let x = p[0];
+    let y = p[1];
+    let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2);
+
+    if dist_sq <= RADIUS_SQ_ACTUAL {
+        res = H_INSIDE_CIRCLE_ANISO;
+    }
+    // Simple anisotropic factor for demonstration, adjust as needed
+    res * (1.0 + 0.5 * (x - CENTER_X).abs())
+}
 fn main() -> Result<()> {
-    let fname = "geom3d.mesh";
-    let fname = Path::new(fname);
+    let args = Args::parse();
 
     let output_dir = Path::new("Results_For_Remeshing_2d");
     if !output_dir.exists() {
         std::fs::create_dir(output_dir)?;
     }
-    if !fname.exists() {
-        std::fs::write("geom3d.geo", GEO_FILE)?;
-
-        let output = Command::new("gmsh")
-            .arg("geom3d.geo")
-            .arg("-3")
-            .arg("-o")
-            .arg(fname.to_str().unwrap())
-            .output()?;
-
-        assert!(
-            output.status.success(),
-            "gmsh error: {}",
-            String::from_utf8(output.stderr).unwrap()
-        );
+    let mut msh = test_mesh_2d();
+    for _ in 0..args.num_splits {
+        msh = msh.split();
     }
-    let mut msh = test_mesh_2d()
-        .split()
-        .split()
-        .split()
-        .split()
-        .split()
-        .split()
-        .split();
     println!(
         "Nombre d'éléments contenus dans le maillage {} ",
         msh.n_elems()
     );
-
-    let h = |p: Point<2>| {
-        let mut res = H_OUTSIDE_CIRCLE;
-        let x = p[0];
-        let y = p[1];
-        let mut dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2);
-        dist_sq = dist_sq.sqrt();
-        if dist_sq <= RADIUS_SQ {
-            res = H_INSIDE_CIRCLE;
+    match args.metric_type.as_str() {
+        "iso" => {
+            let m: Vec<IsoMetric<2>> = msh
+                .verts()
+                .map(|v| IsoMetric::<2>::from(calculate_iso_metric_2d(v)))
+                .collect();
+            let (bdy, _) = msh.boundary();
+            let _topo = msh.compute_topology();
+            let geom = LinearGeometry::<2, Edge>::new(&msh, bdy).unwrap();
+            msh.compute_volumes();
+            let remesher = ParallelRemesher::<
+                2,
+                Triangle,
+                IsoMetric<2>,
+                tmesh::mesh::partition::HilbertPartitioner,
+                NoCostEstimator<2, Triangle, IsoMetric<2>>,
+            >::new(msh, m, 8)?;
+            let file_name = "Partitionned_Hilbert.vtu".to_string();
+            let output_path = output_dir.join(&file_name);
+            remesher
+                .partitionned_mesh()
+                .write_vtk(output_path.to_str().unwrap())?;
+            let dd_params = ParallelRemesherParams::default();
+            let params = RemesherParams::default();
+            let time = Instant::now();
+            (msh, _, _) = remesher.remesh(&geom, params, &dd_params).unwrap();
+            let t2 = time.elapsed();
+            println!("Temps de remaillage Avec Estimation du travail {t2:?}");
+            let file_name = "Remeshed_Hilbert.vtu".to_string();
+            let output_path = output_dir.join(&file_name);
+            msh.write_vtk(output_path.to_str().unwrap())?;
         }
-        res
-    };
-    let m = msh
-        .verts()
-        .map(|v| {
-            let metric_value = h(v); // Calculez la valeur scalaire (f64) de la métrique en utilisant ce point
-            IsoMetric::<2>::from(metric_value)
-        })
-        .collect();
-    let (bdy, _) = msh.boundary();
-    let _topo = msh.compute_topology();
-    let geom = LinearGeometry::<2, Edge>::new(&msh, bdy).unwrap();
-    msh.compute_volumes();
-    // let imp_met: Vec<_> = msh
-    //     .par_gelems()
-    //     .map(|ge| ge.calculate_implied_metric())
-    //     .collect();
-    let remesher = ParallelRemesher::<
-        2,
-        Triangle,
-        IsoMetric<2>,
-        tmesh::mesh::partition::HilbertPartitioner,
-        NoCostEstimator<2, Triangle, IsoMetric<2>>,
-    >::new(msh, m, 8)?;
-    let file_name = "Partitionned_Hilbert.vtu".to_string();
-    let output_path = output_dir.join(&file_name);
-    remesher
-        .partitionned_mesh()
-        .write_vtk(output_path.to_str().unwrap())?;
-    let dd_params = ParallelRemesherParams::default();
-    let params = RemesherParams::default();
-    let time = Instant::now();
-    (msh, _, _) = remesher.remesh(&geom, params, &dd_params).unwrap();
-    let t2 = time.elapsed();
-    println!("Temps de remaillage Avec Estimation du travail {t2:?}");
-    let file_name = "Remeshed_Hilbert.vtu".to_string();
-    let output_path = output_dir.join(&file_name);
-    msh.write_vtk(output_path.to_str().unwrap())?;
+        "aniso" => {
+            let m: Vec<AnisoMetric2d> = msh
+                .verts()
+                .map(|v| {
+                    AnisoMetric2d::from_iso(&IsoMetric::<2>::from(calculate_aniso_metric_2d(v)))
+                })
+                .collect();
+            let (bdy, _) = msh.boundary();
+            let _topo = msh.compute_topology();
+            let geom = LinearGeometry::<2, Edge>::new(&msh, bdy).unwrap();
+            msh.compute_volumes();
+            let remesher = ParallelRemesher::<
+                2,
+                Triangle,
+                AnisoMetric2d,
+                tmesh::mesh::partition::HilbertPartitioner,
+                NoCostEstimator<2, Triangle, AnisoMetric2d>,
+            >::new(msh, m, 8)?;
+            let file_name = "Partitionned_Hilbert.vtu".to_string();
+            let output_path = output_dir.join(&file_name);
+            remesher
+                .partitionned_mesh()
+                .write_vtk(output_path.to_str().unwrap())?;
+            let dd_params = ParallelRemesherParams::default();
+            let params = RemesherParams::default();
+            let time = Instant::now();
+            (msh, _, _) = remesher.remesh(&geom, params, &dd_params).unwrap();
+            let t2 = time.elapsed();
+            println!("Temps de remaillage Avec Estimation du travail {t2:?}");
+            let file_name = "Remeshed_Hilbert.vtu".to_string();
+            let output_path = output_dir.join(&file_name);
+            msh.write_vtk(output_path.to_str().unwrap())?;
+        }
+        _ => {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Type de métrique non valide",
+            )));
+        }
+    }
+
     Ok(())
 }

@@ -19,6 +19,7 @@ typenum = { version ="1.17", features = ["const-generics"] }
 num = "0.4.3"
 tempfile = "3.14"
 tmesh = {path = "../tmesh"}
+clap = { version = "4.0", features = ["derive"] } 
 
 [features]
 32bit-tags = ["tmesh/32bit-tags"]
