@@ -10,7 +10,10 @@ use tmesh::{
     Result,
     mesh::{
         Mesh,
-        partition::{BFSPartitionner, BFSWRPartitionner, HilbertBallPartitioner, Partitioner},
+        partition::{
+            BFSPartitionner, BFSWRPartitionner, HilbertBallPartitioner, HilbertPartitioner,
+            Partitioner,
+        },
     },
 };
 
@@ -138,6 +141,23 @@ fn main() -> Result<()> {
 
             if args.cost_estimator.as_str() == "Nocost" {
                 match args.partitionner.as_str() {
+                    "HilbertPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            HilbertPartitioner,
+                            NoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "HilbertPartitionner",
+                            args.n_parts,
+                            "iso",
+                        )?;
+                    }
                     "HilbertBallPartitionner" => {
                         perform_remeshing::<
                             2,
@@ -223,6 +243,23 @@ fn main() -> Result<()> {
             } else {
                 // Default to TotoCostEstimator if not "Nocost"
                 match args.partitionner.as_str() {
+                    "HilbertPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            IsoMetric<2>,
+                            HilbertPartitioner,
+                            TotoCostEstimator<2, Triangle, IsoMetric<2>>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "HilbertPartitionner",
+                            args.n_parts,
+                            "iso",
+                        )?;
+                    }
                     "HilbertBallPartitionner" => {
                         perform_remeshing::<
                             2,
@@ -313,6 +350,23 @@ fn main() -> Result<()> {
 
             if args.cost_estimator.as_str() == "Nocost" {
                 match args.partitionner.as_str() {
+                    "HilbertPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            HilbertPartitioner,
+                            NoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "HilbertPartitionner",
+                            args.n_parts,
+                            "aniso",
+                        )?;
+                    }
                     "HilbertBallPartitionner" => {
                         perform_remeshing::<
                             2,
@@ -398,6 +452,23 @@ fn main() -> Result<()> {
             } else {
                 // Default to TotoCostEstimator if not "Nocost"
                 match args.partitionner.as_str() {
+                    "HilbertPartitionner" => {
+                        perform_remeshing::<
+                            2,
+                            Triangle,
+                            AnisoMetric2d,
+                            HilbertPartitioner,
+                            TotoCostEstimator<2, Triangle, AnisoMetric2d>,
+                        >(
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "HilbertPartitionner",
+                            args.n_parts,
+                            "aniso",
+                        )?;
+                    }
                     "HilbertBallPartitionner" => {
                         perform_remeshing::<
                             2,

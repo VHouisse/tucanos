@@ -6,7 +6,7 @@ use crate::{
     mesh::{Elem, SimplexMesh},
     metric::{AnisoMetric2d, HasImpliedMetric, IsoMetric, Metric},
 };
-
+const ADD_PERCENTAGE: f64 = 40.0;
 pub trait ElementCostEstimator<const D: usize, E: Elem, M: Metric<D>>: Send + Sync {
     fn new(m: &[M]) -> Self;
     // fn compute(&self) -> Vec<f64>;
@@ -96,7 +96,8 @@ where
     >>::ImpliedMetricType;
 
     fn compute(&self, msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64> {
-        msh.par_elems()
+        let work: Vec<_> = msh
+            .par_elems()
             .map(|e| {
                 let ge = msh.gelem(e);
                 let implied_metric = ge.calculate_implied_metric();
@@ -109,9 +110,12 @@ where
                 let d_initial_metric = implied_metric.density();
                 let d_target_metric = mean_target_metric.density();
                 let d_intersected = intersected_metric.density();
-
                 work_eval(d_initial_metric, d_target_metric, d_intersected, vol)
             })
+            .collect();
+        let sum_work: f64 = work.iter().sum();
+        work.iter()
+            .map(|&w| w + ADD_PERCENTAGE * sum_work)
             .collect()
     }
 }

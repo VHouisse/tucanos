@@ -146,18 +146,20 @@ pub fn main() -> Result<()> {
         );
     }
     let mut msh = test_mesh_2d().split().split().split().split();
-
+    let file_name = "Maillage_Iso.vtu".to_string();
+    let output_path = output_dir.join(&file_name);
+    let _ = msh.write_vtk(output_path.to_str().unwrap());
     println!("# of elements: {}", msh.n_elems());
 
     let n_parts = 4;
     let h = get_h(&msh).unwrap();
     let m: Vec<_> = h.iter().map(|h_val| IsoMetric::<2>::from(*h_val)).collect();
     msh.compute_volumes();
-    let estimator = TotoCostEstimator::<2, Triangle, IsoMetric<2>>::new();
+    let estimator = TotoCostEstimator::<2, Triangle, IsoMetric<2>>::new(&m);
     let weights = estimator.compute(&msh, &m);
     let start = Instant::now();
     let (quality, imbalance) = msh.partition::<HilbertPartitioner>(n_parts, Some(weights))?;
-    let file_name = format!("Partitionned_Hilbert.vtu");
+    let file_name = "Partitionned_Hilbert.vtu".to_string();
     let output_path = output_dir.join(&file_name);
     let _ = msh.write_vtk(output_path.to_str().unwrap());
     let t = start.elapsed();
@@ -172,7 +174,7 @@ pub fn main() -> Result<()> {
     let weights = estimator.compute(&msh, &m);
     let start = Instant::now();
     let (quality, imbalance) = msh.partition::<HilbertBallPartitioner>(n_parts, Some(weights))?;
-    let file_name = format!("Partitionned_Hilbert_Ball.vtu");
+    let file_name = "Partitionned_Hilbert_Ball.vtu".to_string();
     let output_path = output_dir.join(&file_name);
     let _ = msh.write_vtk(output_path.to_str().unwrap());
     let t = start.elapsed();
@@ -187,7 +189,7 @@ pub fn main() -> Result<()> {
     let weights = estimator.compute(&msh, &m);
     let start = Instant::now();
     let (quality, imbalance) = msh.partition::<BFSPartitionner>(n_parts, Some(weights))?;
-    let file_name = format!("Partitionned_BFS.vtu");
+    let file_name = "Partitionned_BFS.vtu".to_string();
     let output_path = output_dir.join(&file_name);
     let _ = msh.write_vtk(output_path.to_str().unwrap());
     let t = start.elapsed();
@@ -202,7 +204,7 @@ pub fn main() -> Result<()> {
     let weights = estimator.compute(&msh, &m);
     let start = Instant::now();
     let (quality, imbalance) = msh.partition::<BFSWRPartitionner>(n_parts, Some(weights))?;
-    let file_name = format!("Partitionned_BFSWR.vtu");
+    let file_name = "Partitionned_BFSWR.vtu".to_string();
     let output_path = output_dir.join(&file_name);
     let _ = msh.write_vtk(output_path.to_str().unwrap());
     let t = start.elapsed();

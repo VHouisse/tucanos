@@ -20,7 +20,6 @@ def parse_log_file(filepath):
     with open(filepath, 'r') as f:
         for line in f:
             if line.startswith("DATA,"):
-                # Supprime le préfixe "DATA," et divise la ligne par virgule
                 parts = line[5:].strip().split(',')
                 record = {}
                 for part in parts:
@@ -53,43 +52,56 @@ if not all_data:
 
 df = pd.DataFrame(all_data)
 
+# --- CORRECTION ICI : Fonction de parsing de temps plus robuste ---
+def parse_time_string_robust(time_str):
+    time_str = str(time_str).strip().lower() # Convertir en string, enlever espaces, minuscules
+    if time_str.endswith('ms'):
+        try:
+            return float(time_str[:-2]) / 1000.0
+        except ValueError:
+            return np.nan # Retourne NaN si la conversion échoue
+    elif time_str.endswith('s'):
+        try:
+            return float(time_str[:-1])
+        except ValueError:
+            return np.nan
+    else: # Si aucune unité, tente de parser comme un float direct
+        try:
+            return float(time_str)
+        except ValueError:
+            return np.nan # Retourne NaN si ce n'est pas un nombre valide
+
 # --- Nettoyage et conversion des types ---
-numeric_cols = ['D', 'num_splits', 'num_elements', 'time_seconds']
-for col in numeric_cols:
-    if col == 'time_seconds':
-        # Gère les valeurs comme "71.62365ms" en retirant 'ms' et convertissant en float (puis en secondes)
-        df[col] = df[col].astype(str).str.replace('ms', '', regex=False)
-        df[col] = pd.to_numeric(df[col], errors='coerce') / 1000.0 # Convertit les ms en secondes
-    else:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+numeric_cols = ['D','num_elements', 'time_seconds']
+
+# Appliquer la fonction de parsing robuste spécifiquement à la colonne time_seconds
+df['time_seconds'] = df['time_seconds'].apply(parse_time_string_robust)
+
+# Convertir les autres colonnes numériques (D, num_elements)
+for col in ['D', 'num_elements']:
+    df[col] = pd.to_numeric(df[col], errors='coerce')
 
 # Supprime les lignes où les conversions numériques ont échoué
 df.dropna(subset=numeric_cols, inplace=True)
-
-# Nettoie les noms de types d'éléments Rust (ex: "tucanos::mesh::Triangle" -> "Triangle")
-df['E'] = df['E'].apply(lambda x: x.split('::')[-1] if isinstance(x, str) else x)
 
 print("\n--- Aperçu des données collectées ---")
 print(df.head())
 print("\n--- Informations sur les données ---")
 print(df.info())
 
-# --- Génération de graphiques ---
-
+# --- Génération de graphiques (inchangé) ---
 print("\n--- Génération des graphiques de comparaison Nocost vs Toto ---")
 
-# Regroupe les données par dimension, type de métrique et partitionneur
 grouped = df.groupby(['D', 'metric_type', 'partitioner'])
 
 for name, group in grouped:
     dimension, metric_type, partitioner = name
     
-    # Filtre les données pour les estimateurs de coût 'Nocost' et 'Toto'
     nocost_data = group[group['cost_estimator'] == 'Nocost'].sort_values('num_elements')
     toto_data = group[group['cost_estimator'] == 'Toto'].sort_values('num_elements')
 
     if nocost_data.empty and toto_data.empty:
-        continue # Passe si aucune donnée pour cette combinaison
+        continue
 
     plt.figure(figsize=(10, 6))
 
@@ -108,10 +120,9 @@ for name, group in grouped:
     plt.legend()
     plt.tight_layout()
 
-    # Nettoie le nom de fichier pour éviter les caractères spéciaux
     filename = f"exec_time_{dimension}D_{metric_type}_{partitioner}_comparison.png"
-    filename = re.sub(r'[^\w\s.-]', '', filename) # Supprime les caractères non alphanumériques (sauf alphanumériques, espaces, tirets, points)
-    filename = filename.replace(' ', '_') # Remplace les espaces par des underscores
+    filename = re.sub(r'[^\w\s.-]', '', filename)
+    filename = filename.replace(' ', '_')
     
     plot_path = os.path.join(OUTPUT_PLOTS_DIR, filename)
     plt.savefig(plot_path)

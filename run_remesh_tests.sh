@@ -20,13 +20,13 @@ EXAMPLE_2D_NAME="remeshing_res_2d" # Assuming you named your 2D example this way
 EXAMPLE_3D_NAME="remeshing_res_3d" # Assuming you named your 3D example this way
 
 # Define the different parameters to test
-SPLITS_2D=(5 6)   # Number of initial splits for 2D mesh
-SPLITS_3D=(3 4)   # Number of initial splits for 3D mesh
+SPLITS_2D=(2 3 4 5 6 7)   # Number of initial splits for 2D mesh
+SPLITS_3D=(2 3 4 5 6 )   # Number of initial splits for 3D mesh
 METRIC_TYPES=("iso" "aniso") # Metric types: isotropic and anisotropic
 COST_ESTIMATORS=("Nocost" "Toto") # Cost estimators
 
 # Base partitioners
-PARTITIONERS=("HilbertBallPartitionner" "BFSPartitionner" "BFSWRPartitionner")
+PARTITIONERS=("HilbertBallPartitionner" "BFSPartitionner" "BFSWRPartitionner" "HilbertPartitionner")
 
 echo "Starting ALL remeshing tests (2D and 3D) with all configurations..."
 echo "Logs will be saved in: $LOG_DIR_2D and $LOG_DIR_3D"
@@ -111,3 +111,4 @@ done
 echo "--- 3D remeshing tests completed. ---"
 echo ""
 echo "All remeshing tests completed. Logs are in the '$LOG_ROOT_DIR/remesh_stats_2D' and '$LOG_ROOT_DIR/remesh_stats_3D' directories."
+python Rmeshing_data_analysis.py 
