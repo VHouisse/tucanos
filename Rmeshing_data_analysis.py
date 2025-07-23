@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 import re
+import numpy as np # Importer numpy pour les calculs statistiques
 
 # --- Configuration (doit correspondre à vos répertoires de logs) ---
 LOG_ROOT_DIR = "remesh_logs_full_config"
@@ -89,38 +90,56 @@ print(df.head())
 print("\n--- Informations sur les données ---")
 print(df.info())
 
-# --- Génération de graphiques (inchangé) ---
-print("\n--- Génération des graphiques de comparaison Nocost vs Toto ---")
+# --- NOUVEAU : Agrégation des données ---
+# Grouper par toutes les colonnes de configuration sauf l'itération, puis calculer la moyenne et l'écart-type
+# On ne se soucie plus de l'index de répétition dans le log, on agrège simplement par les autres paramètres
+grouped_stats = df.groupby(['D', 'metric_type', 'cost_estimator', 'partitioner', 'num_elements'])['time_seconds'].agg(['mean', 'std']).reset_index()
 
-grouped = df.groupby(['D', 'metric_type', 'partitioner'])
+# Renommer les colonnes pour plus de clarté
+grouped_stats = grouped_stats.rename(columns={'mean': 'time_mean', 'std': 'time_std'})
 
-for name, group in grouped:
+print("\n--- Aperçu des statistiques agrégées ---")
+print(grouped_stats.head())
+
+# --- Génération de graphiques avec moyenne et variance ---
+print("\n--- Génération des graphiques de comparaison Nocost vs Toto avec erreurs ---")
+
+# Regrouper pour les graphiques, mais cette fois en utilisant les colonnes de configuration de base
+# On itère sur les mêmes groupes que précédemment, mais en utilisant grouped_stats
+plot_grouped = grouped_stats.groupby(['D', 'metric_type', 'partitioner'])
+
+for name, group in plot_grouped:
     dimension, metric_type, partitioner = name
     
+    # Filtrer les données agrégées pour Nocost et Toto
     nocost_data = group[group['cost_estimator'] == 'Nocost'].sort_values('num_elements')
     toto_data = group[group['cost_estimator'] == 'Toto'].sort_values('num_elements')
 
     if nocost_data.empty and toto_data.empty:
         continue
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(12, 7)) # Agrandir légèrement le graphique
 
+    # Tracer Nocost avec barres d'erreur
     if not nocost_data.empty:
-        plt.plot(nocost_data['num_elements'], nocost_data['time_seconds'], 
-                 marker='o', label='NoCost Estimator')
+        plt.errorbar(nocost_data['num_elements'], nocost_data['time_mean'], 
+                     yerr=nocost_data['time_std'], fmt='-o', capsize=5, 
+                     label='NoCost Estimator (Moyenne ± Écart-type)')
     
+    # Tracer Toto avec barres d'erreur
     if not toto_data.empty:
-        plt.plot(toto_data['num_elements'], toto_data['time_seconds'], 
-                 marker='x', label='TotoCost Estimator')
+        plt.errorbar(toto_data['num_elements'], toto_data['time_mean'], 
+                     yerr=toto_data['time_std'], fmt='-x', capsize=5, 
+                     label='TotoCost Estimator (Moyenne ± Écart-type)')
     
-    plt.title(f'Temps d\'exécution vs. Nombre d\'éléments ({dimension}D, {metric_type}, Part: {partitioner})')
+    plt.title(f'Temps d\'exécution moyen vs. Nombre d\'éléments ({dimension}D, {metric_type}, Part: {partitioner})')
     plt.xlabel('Nombre d\'éléments')
     plt.ylabel('Temps d\'exécution (secondes)')
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
 
-    filename = f"exec_time_{dimension}D_{metric_type}_{partitioner}_comparison.png"
+    filename = f"exec_time_{dimension}D_{metric_type}_{partitioner}_comparison_mean_std.png"
     filename = re.sub(r'[^\w\s.-]', '', filename)
     filename = filename.replace(' ', '_')
     

@@ -66,6 +66,27 @@ fn calculate_iso_metric(p: Point<2>) -> f64 {
     }
     res
 }
+fn calculate_split_metric(
+    mesh: &SimplexMesh<2, Triangle>, // Spécifier D=2 et E=Triangle
+) -> Vec<AnisoMetric2d> {
+    let mut result_metrics = vec![AnisoMetric2d::default(); mesh.n_verts() as usize];
+    let verts: Vec<usize> = (0..mesh.n_verts() as usize).collect();
+    let e2e = mesh.get_vertex_to_elems().unwrap();
+    for i_vert in verts {
+        let elems = e2e.row(i_vert);
+        let gelem = mesh.gelem(mesh.elem(elems[0] as u32));
+        let mut chosen_metric = gelem.implied_metric();
+        let p = mesh.vert(i_vert as u32);
+        let x = p[0];
+        let y = p[1];
+        let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2);
+        if dist_sq <= RADIUS_SQ_ACTUAL {
+            chosen_metric = AnisoMetric2d::from_iso(&IsoMetric::<2>::from(H_INSIDE_CIRCLE_ISO));
+        }
+        result_metrics[i_vert] = chosen_metric;
+    }
+    result_metrics
+}
 
 /// Calculates the anisotropic metric value for a given point.
 fn calculate_aniso_metric(p: Point<2>) -> f64 {
@@ -118,7 +139,6 @@ where
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     let args = Args::parse();
-
     let output_dir = Path::new("Results_For_Remeshing_2d");
     if !output_dir.exists() {
         std::fs::create_dir(output_dir)?;
@@ -343,10 +363,12 @@ fn main() -> Result<()> {
             }
         }
         "aniso" => {
-            let m: Vec<AnisoMetric2d> = msh
+            let _m: Vec<AnisoMetric2d> = msh
                 .verts()
                 .map(|v| AnisoMetric2d::from_iso(&IsoMetric::<2>::from(calculate_aniso_metric(v))))
                 .collect();
+            msh.compute_vertex_to_elems();
+            let m = calculate_split_metric(&msh);
 
             if args.cost_estimator.as_str() == "Nocost" {
                 match args.partitionner.as_str() {

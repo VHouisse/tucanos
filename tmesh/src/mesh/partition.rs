@@ -3,7 +3,7 @@ use super::{Cell, Face, Mesh, Simplex, cell_center, hilbert::hilbert_indices};
 use crate::{Error, Result, Vert2d, Vert3d, argmax, graph::CSRGraph};
 use coupe::Partition;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 #[cfg(feature = "metis")]
 use std::marker::PhantomData;
 
@@ -262,27 +262,25 @@ impl Partitioner for BFSWRPartitionner {
         let target_weight = self.weights.iter().copied().sum::<f64>() / self.n_parts() as f64;
         let mut res = vec![0; self.weights.len()];
         let n_elems = self.weights.len();
-        let mut assigned_elements: HashSet<usize> = HashSet::new();
+        let mut assigned_elements = vec![false; n_elems];
         let mut current_partition_idx = 0;
         let mut current_work_partition = 0.0;
-        let mut queue: VecDeque<usize> = VecDeque::new();
+        let mut queue = VecDeque::new();
 
         let mut next_unassigned_elem_root = 0;
+        let mut n_assigned_elements = 0;
 
-        while assigned_elements.len() < n_elems && current_partition_idx < self.n_parts() {
+        while n_assigned_elements < n_elems {
             while next_unassigned_elem_root < n_elems
-                && assigned_elements.contains(&(self.ids[next_unassigned_elem_root]))
+                && assigned_elements[self.ids[next_unassigned_elem_root]]
             {
                 next_unassigned_elem_root += 1;
             }
 
-            if next_unassigned_elem_root == n_elems {
-                break;
-            }
-
             let start_elem_id = next_unassigned_elem_root;
             queue.push_back(self.ids[start_elem_id]);
-            assigned_elements.insert(self.ids[start_elem_id]);
+            assigned_elements[self.ids[start_elem_id]] = true;
+            n_assigned_elements += 1;
 
             while let Some(current_elem_id) = queue.pop_front() {
                 let elem_work = self.weights[current_elem_id];
@@ -293,7 +291,8 @@ impl Partitioner for BFSWRPartitionner {
                     current_partition_idx += 1;
                     current_work_partition = 0.0;
                     for &elem_id_in_queue in &queue {
-                        assigned_elements.remove(&elem_id_in_queue);
+                        assigned_elements[elem_id_in_queue] = false;
+                        n_assigned_elements -= 1;
                     }
                     queue.clear();
                 }
@@ -302,7 +301,9 @@ impl Partitioner for BFSWRPartitionner {
                 current_work_partition += elem_work;
 
                 for &neighbor_elem_id in self.graph.row(current_elem_id) {
-                    if assigned_elements.insert(neighbor_elem_id) {
+                    if !assigned_elements[neighbor_elem_id] {
+                        assigned_elements[neighbor_elem_id] = true;
+                        n_assigned_elements += 1;
                         queue.push_back(neighbor_elem_id);
                     }
                 }
@@ -311,7 +312,7 @@ impl Partitioner for BFSWRPartitionner {
                 next_unassigned_elem_root = 0;
             }
         }
-
+        Self::partition_correction(self, &mut res);
         Ok(res)
     }
     fn n_parts(&self) -> usize {
@@ -362,16 +363,17 @@ impl Partitioner for BFSPartitionner {
         let target_weight = self.weights.iter().copied().sum::<f64>() / self.n_parts() as f64;
         let mut res = vec![0; self.weights.len()];
         let n_elems = self.weights.len();
-        let mut assigned_elements: HashSet<usize> = HashSet::new();
+        let mut assigned_elements = vec![false; n_elems];
         let mut current_partition_idx = 0;
         let mut current_work_partition = 0.0;
-        let mut queue: VecDeque<usize> = VecDeque::new();
+        let mut queue = VecDeque::new();
 
         let mut next_unassigned_elem_root = 0;
+        let mut n_assigned_elements = 0;
 
-        while assigned_elements.len() < n_elems && current_partition_idx < self.n_parts() {
+        while n_assigned_elements < n_elems {
             while next_unassigned_elem_root < n_elems
-                && assigned_elements.contains(&{ next_unassigned_elem_root })
+                && assigned_elements[self.ids[next_unassigned_elem_root]]
             {
                 next_unassigned_elem_root += 1;
             }
@@ -382,7 +384,8 @@ impl Partitioner for BFSPartitionner {
 
             let start_elem_id = next_unassigned_elem_root;
             queue.push_back(self.ids[start_elem_id]);
-            assigned_elements.insert(self.ids[start_elem_id]);
+            assigned_elements[self.ids[start_elem_id]] = true;
+            n_assigned_elements += 1;
 
             while let Some(current_elem_id) = queue.pop_front() {
                 let elem_work = self.weights[current_elem_id];
@@ -398,14 +401,12 @@ impl Partitioner for BFSPartitionner {
                 current_work_partition += elem_work;
 
                 for &neighbor_elem_id in self.graph.row(current_elem_id) {
-                    if assigned_elements.insert(neighbor_elem_id) {
+                    if !assigned_elements[neighbor_elem_id] {
                         queue.push_back(neighbor_elem_id);
+                        assigned_elements[neighbor_elem_id] = true;
+                        n_assigned_elements += 1;
                     }
                 }
-            }
-            if current_partition_idx + 1 < self.n_parts() && assigned_elements.len() < n_elems {
-                current_partition_idx += 1;
-                current_work_partition = 0.0;
             }
         }
         Self::partition_correction(self, &mut res);
@@ -473,7 +474,7 @@ impl Partitioner for HilbertBallPartitioner {
                     let elem_work = self.weights[i_elem];
                     if (current_work_partition + elem_work) > target_weight {
                         // to do Compute diff between target weight and actual partition weight to balance the best as possible
-                        // let distance = target_weight - current_work_partition;
+                        // let distance = target_weight - current_work_partition
                         current_work_partition = elem_work; // change
                         if current_partition_idx < self.n_parts - 1 {
                             current_partition_idx += 1;
@@ -486,6 +487,7 @@ impl Partitioner for HilbertBallPartitioner {
                 }
             }
         }
+        Self::partition_correction(self, &mut partition);
         Ok(partition)
     }
 
@@ -546,6 +548,7 @@ impl Partitioner for HilbertPartitioner {
             res[j] = part;
             weight += self.weights[j];
         }
+        Self::partition_correction(self, &mut res);
         Ok(res)
     }
 

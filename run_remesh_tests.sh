@@ -1,34 +1,44 @@
 #!/bin/bash
 
 # Configuration for logging
-LOG_ROOT_DIR="remesh_logs_full_config" # Renommé pour plus de clarté
+LOG_ROOT_DIR="remesh_logs_full_config"
 mkdir -p "$LOG_ROOT_DIR"
 
-# Définir les répertoires spécifiques pour les logs 2D et 3D
+# Define specific directories for 2D and 3D logs
 LOG_DIR_2D="${LOG_ROOT_DIR}/remesh_stats_2D"
 LOG_DIR_3D="${LOG_ROOT_DIR}/remesh_stats_3D"
 
-# Créer les répertoires pour les logs 2D et 3D
-mkdir -p "$LOG_DIR_2D"
-mkdir -p "$LOG_DIR_3D"
+if [ -d "$LOG_DIR_2D" ]; then
+    echo "Nettoyage du répertoire existant: $LOG_DIR_2D"
+    rm -rf "${LOG_DIR_2D}"/* # Supprime tout le contenu
+else
+    echo "Création du répertoire: $LOG_DIR_2D"
+    mkdir -p "$LOG_DIR_2D"
+fi
+if [ -d "$LOG_DIR_3D" ]; then
+    echo "Nettoyage du répertoire existant: $LOG_DIR_3D"
+    rm -rf "${LOG_DIR_3D}"/* # Supprime tout le contenu
+else
+    echo "Création du répertoire: $LOG_DIR_3D"
+    mkdir -p "$LOG_DIR_3D"
+fi
 
 # Define the example names for your 2D and 3D remeshing applications
-# IMPORTANT: These should match the names in your Cargo.toml for the examples.
-# For example, if your 2D file is `examples/remeshing_2d_example.rs`, use "remeshing_2d_example"
-# And if your 3D file is `examples/remeshing_3d_example.rs`, use "remeshing_3d_example"
-EXAMPLE_2D_NAME="remeshing_res_2d" # Assuming you named your 2D example this way
-EXAMPLE_3D_NAME="remeshing_res_3d" # Assuming you named your 3D example this way
+EXAMPLE_2D_NAME="remeshing_res_2d"
+EXAMPLE_3D_NAME="remeshing_res_3d"
+
+# Define the number of repetitions for each simulation
+NUM_REPETITIONS=5 # <--- NOUVEAU : Nombre de répétitions pour chaque simulation
 
 # Define the different parameters to test
-SPLITS_2D=(2 3 4 5 6 7)   # Number of initial splits for 2D mesh
-SPLITS_3D=(2 3 4 5 6 )   # Number of initial splits for 3D mesh
-METRIC_TYPES=("iso" "aniso") # Metric types: isotropic and anisotropic
-COST_ESTIMATORS=("Nocost" "Toto") # Cost estimators
-
-# Base partitioners
+SPLITS_2D=()
+SPLITS_3D=(3 4 5)
+METRIC_TYPES=("iso")
+COST_ESTIMATORS=("Nocost" "Toto")
 PARTITIONERS=("HilbertBallPartitionner" "BFSPartitionner" "BFSWRPartitionner" "HilbertPartitionner")
 
 echo "Starting ALL remeshing tests (2D and 3D) with all configurations..."
+echo "Each simulation will be run $NUM_REPETITIONS times."
 echo "Logs will be saved in: $LOG_DIR_2D and $LOG_DIR_3D"
 echo "----------------------------------------------------"
 
@@ -40,30 +50,31 @@ for splits in "${SPLITS_2D[@]}"; do
     for metric_type in "${METRIC_TYPES[@]}"; do
         for cost_estimator in "${COST_ESTIMATORS[@]}"; do
             for partitioner in "${PARTITIONERS[@]}"; do
-                echo "Running 2D test with:"
-                echo "  num_splits     = $splits"
-                echo "  metric_type    = $metric_type"
-                echo "  cost_estimator = $cost_estimator"
-                echo "  partitioner    = $partitioner"
+                for i in $(seq 1 $NUM_REPETITIONS); do # <--- NOUVEAU : Boucle de répétition
+                    echo "Running 2D test (Repetition $i/$NUM_REPETITIONS) with:"
+                    echo "  num_splits     = $splits"
+                    echo "  metric_type    = $metric_type"
+                    echo "  cost_estimator = $cost_estimator"
+                    echo "  partitioner    = $partitioner"
 
-                # **CORRECTION ICI : suppression du "_2D" redondant dans le nom de fichier**
-                LOG_FILE="${LOG_DIR_2D}/splits${splits}_metric${metric_type}_cost${cost_estimator}_part${partitioner}.txt"
+                    # Ajouter l'index de répétition au nom du fichier de log
+                    LOG_FILE="${LOG_DIR_2D}/splits${splits}_metric${metric_type}_cost${cost_estimator}_part${partitioner}_rep${i}.txt"
 
-                # Run the Rust program for 2D
-                cargo run --release --example "$EXAMPLE_2D_NAME" -- \
-                    --num-splits "$splits" \
-                    --metric-type "$metric_type" \
-                    --cost-estimator "$cost_estimator" \
-                    --partitionner "$partitioner" \
-                    > "$LOG_FILE" 2>&1
+                    # Run the Rust program for 2D
+                    cargo run --release --example "$EXAMPLE_2D_NAME" -- \
+                        --num-splits "$splits" \
+                        --metric-type "$metric_type" \
+                        --cost-estimator "$cost_estimator" \
+                        --partitionner "$partitioner" \
+                        > "$LOG_FILE" 2>&1
 
-                # Check the exit status of the previous command
-                if [ $? -eq 0 ]; then
-                    echo "2D test completed successfully. Log saved to: $LOG_FILE"
-                else
-                    echo "2D test FAILED. Check log file for details: $LOG_FILE"
-                fi
-                echo "----------------------------------------------------"
+                    if [ $? -eq 0 ]; then
+                        echo "2D test (Repetition $i) completed successfully. Log saved to: $LOG_FILE"
+                    else
+                        echo "2D test (Repetition $i) FAILED. Check log file for details: $LOG_FILE"
+                    fi
+                    echo "----------------------------------------------------"
+                done # End of NUM_REPETITIONS loop
             done
         done
     done
@@ -79,30 +90,31 @@ for splits in "${SPLITS_3D[@]}"; do
     for metric_type in "${METRIC_TYPES[@]}"; do
         for cost_estimator in "${COST_ESTIMATORS[@]}"; do
             for partitioner in "${PARTITIONERS[@]}"; do
-                echo "Running 3D test with:"
-                echo "  num_splits     = $splits"
-                echo "  metric_type    = $metric_type"
-                echo "  cost_estimator = $cost_estimator"
-                echo "  partitioner    = $partitioner"
+                for i in $(seq 1 $NUM_REPETITIONS); do # <--- NOUVEAU : Boucle de répétition
+                    echo "Running 3D test (Repetition $i/$NUM_REPETITIONS) with:"
+                    echo "  num_splits     = $splits"
+                    echo "  metric_type    = $metric_type"
+                    echo "  cost_estimator = $cost_estimator"
+                    echo "  partitioner    = $partitioner"
 
-                # **CORRECTION ICI : suppression du "_3D" redondant dans le nom de fichier**
-                LOG_FILE="${LOG_DIR_3D}/splits${splits}_metric${metric_type}_cost${cost_estimator}_part${partitioner}.txt"
+                    # Ajouter l'index de répétition au nom du fichier de log
+                    LOG_FILE="${LOG_DIR_3D}/splits${splits}_metric${metric_type}_cost${cost_estimator}_part${partitioner}_rep${i}.txt"
 
-                # Run the Rust program for 3D
-                cargo run --release --example "$EXAMPLE_3D_NAME" -- \
-                    --num-splits "$splits" \
-                    --metric-type "$metric_type" \
-                    --cost-estimator "$cost_estimator" \
-                    --partitionner "$partitioner" \
-                    > "$LOG_FILE" 2>&1
+                    # Run the Rust program for 3D
+                    cargo run --release --example "$EXAMPLE_3D_NAME" -- \
+                        --num-splits "$splits" \
+                        --metric-type "$metric_type" \
+                        --cost-estimator "$cost_estimator" \
+                        --partitionner "$partitioner" \
+                        > "$LOG_FILE" 2>&1
 
-                # Check the exit status of the previous command
-                if [ $? -eq 0 ]; then
-                    echo "3D test completed successfully. Log saved to: $LOG_FILE"
-                else
-                    echo "3D test FAILED. Check log file for details: $LOG_FILE"
-                fi
-                echo "----------------------------------------------------"
+                    if [ $? -eq 0 ]; then
+                        echo "3D test (Repetition $i) completed successfully. Log saved to: $LOG_FILE"
+                    else
+                        echo "3D test (Repetition $i) FAILED. Check log file for details: $LOG_FILE"
+                    fi
+                    echo "----------------------------------------------------"
+                done # End of NUM_REPETITIONS loop
             done
         done
     done
@@ -111,4 +123,4 @@ done
 echo "--- 3D remeshing tests completed. ---"
 echo ""
 echo "All remeshing tests completed. Logs are in the '$LOG_ROOT_DIR/remesh_stats_2D' and '$LOG_ROOT_DIR/remesh_stats_3D' directories."
-python Rmeshing_data_analysis.py 
+python Rmeshing_data_analysis.py

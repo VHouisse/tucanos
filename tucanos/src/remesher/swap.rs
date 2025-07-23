@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use super::Remesher;
 use crate::{
     Dim, Idx, Result,
@@ -195,7 +197,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         debug: bool,
     ) -> Result<u32> {
         debug!("Swap edges: target quality = {}", params.q);
-
+        let time = Instant::now();
         let mut n_iter = 0;
         let mut cavity = Cavity::new();
         loop {
@@ -216,8 +218,14 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             }
 
             debug!("Iteration {n_iter}: {n_swaps} edges swapped ({n_fails} failed, {n_ok} OK)");
-            self.stats
-                .push(StepStats::Swap(SwapStats::new(n_swaps, n_fails, self)));
+            let exec_time = time.elapsed();
+
+            self.stats.push(StepStats::Swap(SwapStats::new(
+                n_swaps,
+                n_fails,
+                self,
+                exec_time.as_secs_f64(),
+            )));
             if n_swaps == 0 || n_iter == params.max_iter {
                 if debug {
                     self.check().unwrap();

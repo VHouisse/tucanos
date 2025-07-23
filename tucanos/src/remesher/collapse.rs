@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use super::Remesher;
 use crate::{
     Result,
@@ -63,7 +65,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         debug: bool,
     ) -> Result<u32> {
         debug!("Collapse elements");
-
+        let time = Instant::now();
         let l_max = params.max_l_abs;
         debug!("max. allowed length: {l_max:.2}");
         let q_min = params.min_q_abs;
@@ -187,10 +189,12 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                 "Iteration {}: {n_collapses} edges collapsed, {n_fails} fails",
                 n_iter + 1,
             );
+            let exec_time = time.elapsed();
             self.stats.push(StepStats::Collapse(CollapseStats::new(
                 n_collapses,
                 n_fails,
                 self,
+                exec_time.as_secs_f64(),
             )));
             if n_collapses == 0 || n_iter == params.max_iter {
                 if debug {

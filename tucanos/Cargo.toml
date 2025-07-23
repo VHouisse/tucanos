@@ -41,6 +41,9 @@ name = "remeshing_res_3d"
 [[example]]
 name = "remeshing_res_2d"
 
+[[example]]
+name = "remeshing_split_stats"
+
 [lints]
 workspace = true
 

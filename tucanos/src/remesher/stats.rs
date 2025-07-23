@@ -158,6 +158,7 @@ pub struct SplitStats {
     n_splits: Idx,
     n_fails: Idx,
     r_stats: RemesherStats,
+    exec_time: f64,
 }
 
 impl SplitStats {
@@ -165,11 +166,13 @@ impl SplitStats {
         n_splits: Idx,
         n_fails: Idx,
         r: &Remesher<D, E, M>,
+        exec_time: f64,
     ) -> Self {
         Self {
             n_splits,
             n_fails,
             r_stats: RemesherStats::new(r),
+            exec_time,
         }
     }
     pub const fn get_n_splits(&self) -> Idx {
@@ -179,12 +182,17 @@ impl SplitStats {
     pub const fn get_n_fails(&self) -> Idx {
         self.n_fails
     }
+
+    pub const fn get_exec_time(&self) -> f64 {
+        self.exec_time
+    }
 }
 impl fmt::Display for SplitStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         //writeln!(f, "  Split Stats:")?;
         writeln!(f, "    Splits Succeeded: {}", self.n_splits)?;
         writeln!(f, "    Splits Failed:    {}", self.n_fails)?;
+        writeln!(f, "    Execution Time:    {}", self.exec_time)?;
         Ok(())
     }
 }
@@ -194,6 +202,7 @@ pub struct SwapStats {
     n_swaps: Idx,
     n_fails: Idx,
     r_stats: RemesherStats,
+    exec_time: f64,
 }
 
 impl SwapStats {
@@ -201,11 +210,13 @@ impl SwapStats {
         n_swaps: Idx,
         n_fails: Idx,
         r: &Remesher<D, E, M>,
+        exec_time: f64,
     ) -> Self {
         Self {
             n_swaps,
             n_fails,
             r_stats: RemesherStats::new(r),
+            exec_time,
         }
     }
     pub const fn get_n_swaps(&self) -> Idx {
@@ -215,12 +226,16 @@ impl SwapStats {
     pub const fn get_n_fails(&self) -> Idx {
         self.n_fails
     }
+    pub const fn get_exec_time(&self) -> f64 {
+        self.exec_time
+    }
 }
 impl fmt::Display for SwapStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         //writeln!(f, "  Swap Stats:")?;
         writeln!(f, "    Swaps Succeeded:  {}", self.n_swaps)?;
         writeln!(f, "    Swaps Failed:     {}", self.n_fails)?;
+        writeln!(f, "    Execution Time:    {}", self.exec_time)?;
         Ok(())
     }
 }
@@ -229,6 +244,7 @@ pub struct CollapseStats {
     n_collapses: Idx,
     n_fails: Idx,
     r_stats: RemesherStats,
+    exec_time: f64,
 }
 
 impl CollapseStats {
@@ -236,11 +252,13 @@ impl CollapseStats {
         n_collapses: Idx,
         n_fails: Idx,
         r: &Remesher<D, E, M>,
+        exec_time: f64,
     ) -> Self {
         Self {
             n_collapses,
             n_fails,
             r_stats: RemesherStats::new(r),
+            exec_time,
         }
     }
     pub const fn get_n_collapses(&self) -> Idx {
@@ -250,12 +268,16 @@ impl CollapseStats {
     pub const fn get_n_fails(&self) -> Idx {
         self.n_fails
     }
+    pub const fn get_exec_time(&self) -> f64 {
+        self.exec_time
+    }
 }
 impl fmt::Display for CollapseStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         //writeln!(f, "  Collapse Stats:")?;
         writeln!(f, "    Collapses Succeeded: {}", self.n_collapses)?;
         writeln!(f, "    Collapses Failed:    {}", self.n_fails)?;
+        writeln!(f, "    Execution Time:    {}", self.exec_time)?;
         Ok(())
     }
 }

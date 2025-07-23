@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use super::Remesher;
 use crate::{
     Dim, Idx, Result,
@@ -61,7 +63,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         debug: bool,
     ) -> Result<u32> {
         debug!("Split edges with length > {:.2e}", params.l);
-
+        let time = Instant::now();
         let l_min = params.min_l_abs;
         debug!("min. allowed length: {l_min:.2}");
         let q_min = params.min_q_abs;
@@ -193,8 +195,13 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             debug!(
                 "Iteration {n_iter}: {n_splits} edges split ({n_fails} failed - {n_removed} elements removed)"
             );
-            self.stats
-                .push(StepStats::Split(SplitStats::new(n_splits, n_fails, self)));
+            let exec_time = time.elapsed();
+            self.stats.push(StepStats::Split(SplitStats::new(
+                n_splits,
+                n_fails,
+                self,
+                exec_time.as_secs_f64(),
+            )));
 
             if n_splits == 0 || n_iter == params.max_iter {
                 if debug {

@@ -76,10 +76,13 @@ impl RemeshingInfo {
     fn print_summary_remesh_stats(&self) {
         let mut total_splits = 0;
         let mut total_splits_fails = 0;
+        let mut total_split_exec_time = 0.0;
         let mut total_collapses = 0;
         let mut total_collapses_fails = 0;
+        let mut total_collapse_exec_time = 0.0;
         let mut total_swaps = 0;
         let mut total_swaps_fails = 0;
+        let mut total_swaps_exec_time = 0.0;
         let mut total_smooth_fails = 0;
         let mut _t_init = 0;
 
@@ -88,14 +91,17 @@ impl RemeshingInfo {
                 StepStats::Split(s) => {
                     total_splits += s.get_n_splits();
                     total_splits_fails += s.get_n_fails();
+                    total_split_exec_time += s.get_exec_time();
                 }
                 StepStats::Collapse(s) => {
                     total_collapses += s.get_n_collapses();
                     total_collapses_fails += s.get_n_fails();
+                    total_collapse_exec_time += s.get_exec_time();
                 }
                 StepStats::Swap(s) => {
                     total_swaps += s.get_n_swaps();
                     total_swaps_fails += s.get_n_fails();
+                    total_swaps_exec_time += s.get_exec_time();
                 }
                 StepStats::Smooth(s) => {
                     total_smooth_fails += s.get_n_fails();
@@ -106,9 +112,9 @@ impl RemeshingInfo {
             }
         }
         println!(
-            "\nSplits: {total_splits} Splits echoués : {total_splits_fails}\n
-             Collapses: {total_collapses} Collapses échoués : {total_collapses_fails}\n
-             Swaps: {total_swaps}  Swaps échoués : {total_swaps_fails}\n  
+            "\nSplits: {total_splits} Splits echoués : {total_splits_fails} Execution Time : {total_split_exec_time} \n
+             Collapses: {total_collapses} Collapses échoués : {total_collapses_fails} Execution Time : {total_collapse_exec_time} \n
+             Swaps: {total_swaps}  Swaps échoués : {total_swaps_fails} Execution Time : {total_swaps_exec_time} \n  
              Smooth Fails: {total_smooth_fails}"
         );
         println!("------------------------------------");
@@ -406,7 +412,7 @@ where
                     time: now.elapsed().as_secs_f64(),
                     remesh_stats: stats,
                 };
-                //info.print_summary();
+                info.print_summary();
                 drop(info);
 
                 // Flag elements with n_layers of the interfaces with tag 2, other with tag 1
