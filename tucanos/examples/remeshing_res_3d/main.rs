@@ -48,15 +48,36 @@ struct Args {
     partitionner: String,
 }
 
-const CENTER_X: f64 = 0.3;
-const CENTER_Y: f64 = 0.3;
-const CENTER_Z: f64 = 0.3;
-const RADIUS: f64 = 0.1;
+const CENTER_X: f64 = 0.15;
+const CENTER_Y: f64 = 0.15;
+const CENTER_Z: f64 = 0.15;
+const RADIUS: f64 = 0.05;
 const RADIUS_SQ_ACTUAL: f64 = RADIUS * RADIUS;
 const H_INSIDE_SPHERE_ISO: f64 = 0.005;
 const H_OUTSIDE_SPHERE_ISO: f64 = 0.1;
 const H_INSIDE_SPHERE_ANISO: f64 = 0.01;
 const H_OUTSIDE_SPHERE_ANISO: f64 = 0.2;
+
+fn calculate_split_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoMetric3d> {
+    let mut result_metrics = vec![AnisoMetric3d::default(); mesh.n_verts() as usize];
+    let verts: Vec<usize> = (0..mesh.n_verts() as usize).collect();
+    let e2e = mesh.get_vertex_to_elems().unwrap();
+    for i_vert in verts {
+        let elems = e2e.row(i_vert);
+        let gelem = mesh.gelem(mesh.elem(elems[0] as u32));
+        let mut chosen_metric = gelem.implied_metric();
+        let p = mesh.vert(i_vert as u32);
+        let x = p[0];
+        let y = p[1];
+        let z = p[2];
+        let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
+        if dist_sq <= RADIUS_SQ_ACTUAL {
+            chosen_metric = AnisoMetric3d::from_iso(&IsoMetric::<3>::from(H_INSIDE_SPHERE_ISO));
+        }
+        result_metrics[i_vert] = chosen_metric;
+    }
+    result_metrics
+}
 
 fn calculate_iso_metric(p: Point<3>) -> f64 {
     let mut res = H_OUTSIDE_SPHERE_ISO;
@@ -347,10 +368,12 @@ fn main() -> Result<()> {
             }
         }
         "aniso" => {
-            let m: Vec<AnisoMetric3d> = msh
+            let _m: Vec<AnisoMetric3d> = msh
                 .verts()
                 .map(|v| AnisoMetric3d::from_iso(&IsoMetric::<3>::from(calculate_aniso_metric(v))))
                 .collect();
+            msh.compute_vertex_to_elems();
+            let m = calculate_split_metric(&msh);
 
             if args.cost_estimator.as_str() == "Nocost" {
                 match args.partitionner.as_str() {

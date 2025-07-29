@@ -157,22 +157,31 @@ impl InitStats {
 pub struct SplitStats {
     n_splits: Idx,
     n_fails: Idx,
+    n_verifs: Idx,
     r_stats: RemesherStats,
-    exec_time: f64,
+    total_verif_time: f64,
+    total_split_time: f64,
+    total_fails_time: f64,
 }
 
 impl SplitStats {
     pub fn new<const D: usize, E: Elem, M: Metric<D>>(
         n_splits: Idx,
         n_fails: Idx,
+        n_verifs: Idx,
         r: &Remesher<D, E, M>,
-        exec_time: f64,
+        total_verif_time: f64,
+        total_split_time: f64,
+        total_fails_time: f64,
     ) -> Self {
         Self {
             n_splits,
             n_fails,
+            n_verifs,
             r_stats: RemesherStats::new(r),
-            exec_time,
+            total_verif_time,
+            total_split_time,
+            total_fails_time,
         }
     }
     pub const fn get_n_splits(&self) -> Idx {
@@ -182,9 +191,44 @@ impl SplitStats {
     pub const fn get_n_fails(&self) -> Idx {
         self.n_fails
     }
+    pub const fn get_n_verifs(&self) -> Idx {
+        self.n_verifs
+    }
 
-    pub const fn get_exec_time(&self) -> f64 {
-        self.exec_time
+    pub const fn get_t_time_split(&self) -> f64 {
+        self.total_split_time
+    }
+
+    pub const fn get_t_time_fails(&self) -> f64 {
+        self.total_fails_time
+    }
+
+    pub const fn get_t_time_verif(&self) -> f64 {
+        self.total_verif_time
+    }
+
+    pub const fn get_avg_time_split(&self) -> f64 {
+        if self.n_splits == 0 {
+            0.0
+        } else {
+            self.total_split_time / self.n_splits as f64
+        }
+    }
+
+    pub const fn get_avg_time_fails(&self) -> f64 {
+        if self.n_fails == 0 {
+            0.0
+        } else {
+            self.total_fails_time / self.n_fails as f64
+        }
+    }
+
+    pub const fn get_avg_time_verif(&self) -> f64 {
+        if self.n_verifs == 0 {
+            0.0
+        } else {
+            self.total_verif_time / self.n_verifs as f64
+        }
     }
 }
 impl fmt::Display for SplitStats {
@@ -192,7 +236,8 @@ impl fmt::Display for SplitStats {
         //writeln!(f, "  Split Stats:")?;
         writeln!(f, "    Splits Succeeded: {}", self.n_splits)?;
         writeln!(f, "    Splits Failed:    {}", self.n_fails)?;
-        writeln!(f, "    Execution Time:    {}", self.exec_time)?;
+        writeln!(f, "    Verifs:    {}", self.n_verifs)?;
+
         Ok(())
     }
 }
@@ -201,24 +246,34 @@ impl fmt::Display for SplitStats {
 pub struct SwapStats {
     n_swaps: Idx,
     n_fails: Idx,
+    n_verifs: Idx,
+    total_success_time: f64,
+    total_fail_time: f64,
+    total_verif_time: f64,
     r_stats: RemesherStats,
-    exec_time: f64,
 }
 
 impl SwapStats {
     pub fn new<const D: usize, E: Elem, M: Metric<D>>(
         n_swaps: Idx,
         n_fails: Idx,
+        n_verifs: Idx,
+        total_success_time: f64,
+        total_fail_time: f64,
+        total_verif_time: f64,
         r: &Remesher<D, E, M>,
-        exec_time: f64,
     ) -> Self {
         Self {
             n_swaps,
             n_fails,
+            n_verifs,
+            total_success_time,
+            total_fail_time,
+            total_verif_time,
             r_stats: RemesherStats::new(r),
-            exec_time,
         }
     }
+
     pub const fn get_n_swaps(&self) -> Idx {
         self.n_swaps
     }
@@ -226,8 +281,49 @@ impl SwapStats {
     pub const fn get_n_fails(&self) -> Idx {
         self.n_fails
     }
-    pub const fn get_exec_time(&self) -> f64 {
-        self.exec_time
+
+    pub const fn get_n_verifs(&self) -> Idx {
+        self.n_verifs
+    }
+
+    pub const fn get_t_time_swaps_success(&self) -> f64 {
+        self.total_success_time
+    }
+
+    pub const fn get_avg_time_swaps_success(&self) -> f64 {
+        if self.n_swaps - self.n_fails == 0 {
+            0.0
+        } else {
+            self.total_success_time / (self.n_swaps - self.n_fails) as f64
+        }
+    }
+
+    pub const fn get_t_time_swaps_fails(&self) -> f64 {
+        self.total_fail_time
+    }
+
+    pub const fn get_avg_time_swaps_fails(&self) -> f64 {
+        if self.n_fails == 0 {
+            0.0
+        } else {
+            self.total_fail_time / self.n_fails as f64
+        }
+    }
+
+    pub const fn get_t_time_swaps_verif(&self) -> f64 {
+        self.total_verif_time
+    }
+
+    pub const fn get_avg_time_swaps_verif(&self) -> f64 {
+        if self.n_verifs == 0 {
+            0.0
+        } else {
+            self.total_verif_time / self.n_verifs as f64
+        }
+    }
+
+    pub const fn get_total_exec_time(&self) -> f64 {
+        self.total_success_time + self.total_fail_time + self.total_verif_time
     }
 }
 impl fmt::Display for SwapStats {
@@ -235,7 +331,6 @@ impl fmt::Display for SwapStats {
         //writeln!(f, "  Swap Stats:")?;
         writeln!(f, "    Swaps Succeeded:  {}", self.n_swaps)?;
         writeln!(f, "    Swaps Failed:     {}", self.n_fails)?;
-        writeln!(f, "    Execution Time:    {}", self.exec_time)?;
         Ok(())
     }
 }
@@ -243,24 +338,34 @@ impl fmt::Display for SwapStats {
 pub struct CollapseStats {
     n_collapses: Idx,
     n_fails: Idx,
+    n_verifs: Idx,
     r_stats: RemesherStats,
-    exec_time: f64,
+    total_verif_time: f64,
+    total_collapse_time: f64,
+    total_fails_time: f64,
 }
 
 impl CollapseStats {
     pub fn new<const D: usize, E: Elem, M: Metric<D>>(
         n_collapses: Idx,
         n_fails: Idx,
+        n_verifs: Idx,
         r: &Remesher<D, E, M>,
-        exec_time: f64,
+        total_verif_time: f64,
+        total_collapse_time: f64,
+        total_fails_time: f64,
     ) -> Self {
         Self {
             n_collapses,
             n_fails,
+            n_verifs,
             r_stats: RemesherStats::new(r),
-            exec_time,
+            total_verif_time,
+            total_collapse_time,
+            total_fails_time,
         }
     }
+
     pub const fn get_n_collapses(&self) -> Idx {
         self.n_collapses
     }
@@ -268,16 +373,53 @@ impl CollapseStats {
     pub const fn get_n_fails(&self) -> Idx {
         self.n_fails
     }
-    pub const fn get_exec_time(&self) -> f64 {
-        self.exec_time
+
+    pub const fn get_n_verifs(&self) -> Idx {
+        self.n_verifs
+    }
+
+    pub const fn get_avg_time_collapse(&self) -> f64 {
+        if self.n_collapses == 0 {
+            0.0
+        } else {
+            self.total_collapse_time / self.n_collapses as f64
+        }
+    }
+
+    pub const fn get_t_time_collapse(&self) -> f64 {
+        self.total_collapse_time
+    }
+
+    pub const fn get_avg_time_fails(&self) -> f64 {
+        if self.n_fails == 0 {
+            0.0
+        } else {
+            self.total_fails_time / self.n_fails as f64
+        }
+    }
+
+    pub const fn get_t_time_fails(&self) -> f64 {
+        self.total_fails_time
+    }
+
+    pub const fn get_avg_time_verif(&self) -> f64 {
+        if self.n_verifs == 0 {
+            0.0
+        } else {
+            self.total_verif_time / self.n_verifs as f64
+        }
+    }
+
+    pub const fn get_t_time_verif(&self) -> f64 {
+        self.total_verif_time
     }
 }
+
 impl fmt::Display for CollapseStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         //writeln!(f, "  Collapse Stats:")?;
         writeln!(f, "    Collapses Succeeded: {}", self.n_collapses)?;
         writeln!(f, "    Collapses Failed:    {}", self.n_fails)?;
-        writeln!(f, "    Execution Time:    {}", self.exec_time)?;
         Ok(())
     }
 }

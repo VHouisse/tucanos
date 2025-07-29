@@ -13,11 +13,11 @@ use crate::{
 };
 use log::{debug, trace};
 
-enum TrySwapResult {
-    QualitySufficient,
-    FixedEdge,
+pub enum TrySwapResult {
     CouldNotSwap,
     CouldSwap,
+    QualitySufficient,
+    FixedEdge,
 }
 
 #[derive(Clone, Debug)]
@@ -65,17 +65,24 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         max_angle: f64,
         cavity: &mut Cavity<D, E, M>,
         geom: &G,
-    ) -> Result<TrySwapResult> {
+    ) -> Result<(TrySwapResult, f64)> {
+        let start_time = Instant::now();
         trace!("Try to swap edge {edg:?}");
         cavity.init_from_edge(edg, self);
         if cavity.global_elem_ids.len() == 1 {
             trace!("Cannot swap, only one adjacent cell");
-            return Ok(TrySwapResult::QualitySufficient);
+            return Ok((
+                TrySwapResult::QualitySufficient,
+                start_time.elapsed().as_secs_f64(),
+            ));
         }
 
         if cavity.q_min > params.q {
             trace!("No need to swap, quality sufficient");
-            return Ok(TrySwapResult::QualitySufficient);
+            return Ok((
+                TrySwapResult::QualitySufficient,
+                start_time.elapsed().as_secs_f64(),
+            ));
         }
 
         let l_min = params.min_l_abs.min(params.min_l_rel * cavity.l_min);
@@ -99,11 +106,14 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             .unwrap();
         // tag < 0 on fixed boundaries
         if etag.1 < 0 {
-            return Ok(TrySwapResult::FixedEdge);
+            return Ok((TrySwapResult::FixedEdge, start_time.elapsed().as_secs_f64()));
         }
 
         if etag.0 < E::Face::DIM as Dim {
-            return Ok(TrySwapResult::CouldNotSwap);
+            return Ok((
+                TrySwapResult::CouldNotSwap,
+                start_time.elapsed().as_secs_f64(),
+            ));
         }
 
         for n in 0..cavity.n_verts() {
@@ -144,7 +154,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             }
 
             if let CavityCheckStatus::Ok(min_quality) = filled_cavity.check(l_min, l_max, q_ref) {
-                trace!("Can swap  from {n} : ({min_quality} > {q_ref})");
+                trace!("Can swap  from {n} : ({min_quality} > {q_ref})");
                 succeed = true;
                 q_ref = min_quality;
                 vx = n;
@@ -156,7 +166,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             let ftype = FilledCavityType::ExistingVertex(vx);
             let filled_cavity = FilledCavity::new(cavity, ftype);
             for e in &cavity.global_elem_ids {
-                self.remove_elem(*e)?;
+                self.remove_elem(*e)?; // L'opérateur ? fonctionne à nouveau
             }
             let global_vx = cavity.local2global[vx as usize];
             for (f, t) in filled_cavity.faces() {
@@ -164,32 +174,24 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                 assert!(!f.contains_vertex(global_vx));
                 assert!(!f.contains_edge(edg));
                 let e = E::from_vertex_and_face(global_vx, &f);
-                self.insert_elem(e, t)?;
+                self.insert_elem(e, t)?; // L'opérateur ? fonctionne à nouveau
             }
             for (f, _) in cavity.global_tagged_faces() {
-                self.remove_tagged_face(f)?;
+                self.remove_tagged_face(f)?; // L'opérateur ? fonctionne à nouveau
             }
             for (b, t) in filled_cavity.tagged_faces_boundary_global() {
-                self.add_tagged_face(E::Face::from_vertex_and_face(global_vx, &b), t)?;
+                self.add_tagged_face(E::Face::from_vertex_and_face(global_vx, &b), t)?; // L'opérateur ? fonctionne à nouveau
             }
 
-            return Ok(TrySwapResult::CouldSwap);
+            return Ok((TrySwapResult::CouldSwap, start_time.elapsed().as_secs_f64()));
         }
 
-        Ok(TrySwapResult::CouldNotSwap)
+        Ok((
+            TrySwapResult::CouldNotSwap,
+            start_time.elapsed().as_secs_f64(),
+        ))
     }
 
-    /// Loop over the edges and perform edge swaps if
-    /// - the quality of an adjacent element is < `q_target`
-    /// - no edge smaller than
-    ///   min(1/sqrt(2), max(params.swap_min_l_abs, params.cswap_min_l_rel * min(l)))
-    /// - no edge larger than
-    ///   max(sqrt(2), min(params.swap_max_l_abs, params.swap_max_l_rel * max(l)))
-    /// - no new boundary face is created if its normal forms an angle > than
-    ///   params.max_angle with the normal of the geometry at the face center
-    /// - the edge swap increases the minimum quality of the adjacent elements
-    ///
-    /// where min(l) and max(l) as the min/max edge length over the entire mesh
     pub fn swap<G: Geometry<D>>(
         &mut self,
         params: &SwapParams,
@@ -197,7 +199,6 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         debug: bool,
     ) -> Result<u32> {
         debug!("Swap edges: target quality = {}", params.q);
-        let time = Instant::now();
         let mut n_iter = 0;
         let mut cavity = Cavity::new();
         loop {
@@ -207,25 +208,47 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
             let mut n_swaps = 0;
             let mut n_fails = 0;
-            let mut n_ok = 0;
+            let mut n_verifs_attempted = 0;
+
+            let mut total_success_time = 0.0;
+            let mut total_fail_time = 0.0;
+            let mut total_verif_time = 0.0;
+
             for edg in edges {
-                let res = self.try_swap(edg, params, params.max_angle, &mut cavity, geom)?;
+                // Ici, nous utilisons l'opérateur ? sur le Result retourné par try_swap
+                // et nous déstructurons le tuple (TrySwapResult, f64)
+                let (res, time_spent) =
+                    self.try_swap(edg, params, params.max_angle, &mut cavity, geom)?;
                 match res {
-                    TrySwapResult::CouldNotSwap => n_fails += 1,
-                    TrySwapResult::CouldSwap => n_swaps += 1,
-                    _ => n_ok += 1,
+                    TrySwapResult::CouldNotSwap => {
+                        n_fails += 1;
+                        total_fail_time += time_spent;
+                    }
+                    TrySwapResult::CouldSwap => {
+                        n_swaps += 1;
+                        total_success_time += time_spent;
+                    }
+                    TrySwapResult::QualitySufficient | TrySwapResult::FixedEdge => {
+                        n_verifs_attempted += 1;
+                        total_verif_time += time_spent;
+                    }
                 }
             }
 
-            debug!("Iteration {n_iter}: {n_swaps} edges swapped ({n_fails} failed, {n_ok} OK)");
-            let exec_time = time.elapsed();
+            debug!(
+                "Iteration {n_iter}: {n_swaps} edges swapped ({n_fails} failed, {n_verifs_attempted} checked/ok)"
+            );
 
             self.stats.push(StepStats::Swap(SwapStats::new(
-                n_swaps,
+                n_swaps + n_fails + n_verifs_attempted,
                 n_fails,
+                n_verifs_attempted,
+                total_success_time,
+                total_fail_time,
+                total_verif_time,
                 self,
-                exec_time.as_secs_f64(),
             )));
+
             if n_swaps == 0 || n_iter == params.max_iter {
                 if debug {
                     self.check().unwrap();

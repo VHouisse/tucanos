@@ -65,7 +65,6 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         debug: bool,
     ) -> Result<u32> {
         debug!("Collapse elements");
-        let time = Instant::now();
         let l_max = params.max_l_abs;
         debug!("max. allowed length: {l_max:.2}");
         let q_min = params.min_q_abs;
@@ -73,6 +72,9 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
         let mut n_iter = 0;
         let mut cavity = Cavity::new();
+        let mut total_fail_op_duration = std::time::Duration::new(0, 0);
+        let mut total_verification_duration = std::time::Duration::new(0, 0);
+        let mut total_success_op_duration = std::time::Duration::new(0, 0);
         loop {
             n_iter += 1;
 
@@ -82,17 +84,24 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
             let mut n_collapses = 0;
             let mut n_fails = 0;
+            let mut n_verifs = 0;
             for i_edge in indices {
+                let verif_time = Instant::now();
                 let edg = edges[i_edge];
                 if dims_and_lengths[i_edge].1 < params.l {
                     trace!("Try to collapse edgs {edg:?}");
+                    let attempt_start_time = Instant::now();
                     let (mut i0, mut i1) = edg.into();
                     if !self.verts.contains_key(&i0) {
                         trace!("Cannot collapse: vertex deleted");
+                        total_fail_op_duration += attempt_start_time.elapsed();
+                        n_fails += 1;
                         continue;
                     }
                     if !self.verts.contains_key(&i1) {
                         trace!("Cannot collapse: vertex deleted");
+                        total_fail_op_duration += attempt_start_time.elapsed();
+                        n_fails += 1;
                         continue;
                     }
 
@@ -100,12 +109,16 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                     let mut topo_1 = self.verts.get(&i1).unwrap().tag;
                     // Cannot collapse vertices with entity dim 0
                     if topo_0.0 == 0 && topo_1.0 == 0 {
+                        total_fail_op_duration += attempt_start_time.elapsed();
+                        n_fails += 1;
                         continue;
                     }
 
                     let tag = self.topo.parent(topo_0, topo_1).unwrap();
                     // tag < 0 on fixed boundaries
                     if tag.1 < 0 {
+                        total_fail_op_duration += attempt_start_time.elapsed();
+                        n_fails += 1;
                         continue;
                     }
 
@@ -116,6 +129,8 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                             std::mem::swap(&mut topo_1, &mut topo_0);
                         } else {
                             trace!("Cannot collapse, incompatible geometry");
+                            total_fail_op_duration += attempt_start_time.elapsed();
+                            n_fails += 1;
                             continue;
                         }
                     }
@@ -128,6 +143,8 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                             .tagged_faces()
                             .any(|(f, _)| f.contains_vertex(local_i1))
                     {
+                        total_fail_op_duration += attempt_start_time.elapsed();
+                        n_fails += 1;
                         continue;
                     }
 
@@ -136,11 +153,15 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
                     if !filled_cavity.check_tagged_faces(self) {
                         trace!("Cannot collapse, tagged face already present");
+                        total_fail_op_duration += attempt_start_time.elapsed();
+                        n_fails += 1;
                         continue;
                     }
 
                     if !filled_cavity.check_boundary_normals(&self.topo, geom, params.max_angle) {
                         trace!("Cannot collapse, would create a non smooth surface");
+                        total_fail_op_duration += attempt_start_time.elapsed();
+                        n_fails += 1;
                         continue;
                     }
 
@@ -178,10 +199,15 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                             }
                         }
 
+                        total_success_op_duration += attempt_start_time.elapsed();
                         n_collapses += 1;
                     } else {
+                        total_fail_op_duration += attempt_start_time.elapsed();
                         n_fails += 1;
                     }
+                } else {
+                    total_verification_duration += verif_time.elapsed();
+                    n_verifs += 1;
                 }
             }
 
@@ -189,12 +215,14 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                 "Iteration {}: {n_collapses} edges collapsed, {n_fails} fails",
                 n_iter + 1,
             );
-            let exec_time = time.elapsed();
             self.stats.push(StepStats::Collapse(CollapseStats::new(
                 n_collapses,
                 n_fails,
+                n_verifs, // Ajouté pour correspondre à SplitStats
                 self,
-                exec_time.as_secs_f64(),
+                total_verification_duration.as_secs_f64(),
+                total_success_op_duration.as_secs_f64(),
+                total_fail_op_duration.as_secs_f64(),
             )));
             if n_collapses == 0 || n_iter == params.max_iter {
                 if debug {

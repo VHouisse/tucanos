@@ -73,35 +73,62 @@ pub struct RemeshingInfo {
     pub remesh_stats: Vec<StepStats>,
 }
 impl RemeshingInfo {
+    #[allow(clippy::too_many_lines)]
     fn print_summary_remesh_stats(&self) {
+        let mut nb_split_step = 0;
+        let mut total_verif_splits = 0;
         let mut total_splits = 0;
+        let mut total_splits_time_absolute = 0.0;
         let mut total_splits_fails = 0;
-        let mut total_split_exec_time = 0.0;
+        let mut total_split_fail_time_absolute = 0.0;
+        let mut total_verifs_time_splits_absolute = 0.0;
+
+        let mut nb_collapse_step = 0;
+        let mut total_verif_collapses = 0;
         let mut total_collapses = 0;
         let mut total_collapses_fails = 0;
-        let mut total_collapse_exec_time = 0.0;
-        let mut total_swaps = 0;
+        let mut total_collapse_success_time_absolute = 0.0;
+        let mut total_collapse_fail_time_absolute = 0.0;
+        let mut total_verifs_time_collapses_absolute = 0.0;
+
+        let mut total_swaps_performed = 0;
         let mut total_swaps_fails = 0;
-        let mut total_swaps_exec_time = 0.0;
+        let mut total_swaps_verifs = 0;
+        let mut total_swap_success_time_absolute = 0.0;
+        let mut total_swap_fail_time_absolute = 0.0;
+        let mut total_swap_verif_time_absolute = 0.0;
+
         let mut total_smooth_fails = 0;
         let mut _t_init = 0;
 
         for step_stat in self.remesh_stats.clone() {
             match step_stat {
                 StepStats::Split(s) => {
+                    nb_split_step += 1;
+                    total_verif_splits += s.get_n_verifs();
                     total_splits += s.get_n_splits();
                     total_splits_fails += s.get_n_fails();
-                    total_split_exec_time += s.get_exec_time();
+                    total_split_fail_time_absolute += s.get_t_time_fails();
+                    total_splits_time_absolute += s.get_t_time_split();
+                    total_verifs_time_splits_absolute += s.get_t_time_verif();
                 }
                 StepStats::Collapse(s) => {
+                    nb_collapse_step += 1;
                     total_collapses += s.get_n_collapses();
                     total_collapses_fails += s.get_n_fails();
-                    total_collapse_exec_time += s.get_exec_time();
+                    total_verif_collapses += s.get_n_verifs();
+                    total_collapse_success_time_absolute += s.get_t_time_collapse();
+                    total_collapse_fail_time_absolute += s.get_t_time_fails();
+                    total_verifs_time_collapses_absolute += s.get_t_time_verif();
                 }
+
                 StepStats::Swap(s) => {
-                    total_swaps += s.get_n_swaps();
+                    total_swaps_performed += s.get_n_swaps();
                     total_swaps_fails += s.get_n_fails();
-                    total_swaps_exec_time += s.get_exec_time();
+                    total_swaps_verifs += s.get_n_verifs();
+                    total_swap_success_time_absolute += s.get_t_time_swaps_success();
+                    total_swap_fail_time_absolute += s.get_t_time_swaps_fails();
+                    total_swap_verif_time_absolute += s.get_t_time_swaps_verif();
                 }
                 StepStats::Smooth(s) => {
                     total_smooth_fails += s.get_n_fails();
@@ -111,13 +138,121 @@ impl RemeshingInfo {
                 }
             }
         }
+
+        println!("\n--- Remeshing Summary Stats ---");
+
         println!(
-            "\nSplits: {total_splits} Splits echoués : {total_splits_fails} Execution Time : {total_split_exec_time} \n
-             Collapses: {total_collapses} Collapses échoués : {total_collapses_fails} Execution Time : {total_collapse_exec_time} \n
-             Swaps: {total_swaps}  Swaps échoués : {total_swaps_fails} Execution Time : {total_swaps_exec_time} \n  
-             Smooth Fails: {total_smooth_fails}"
+            "\nSplits (Total in Remeshing Process):
+          Total Split Steps: {nb_split_step}
+          Total Splits Performed: {total_splits}
+          Total Failed Splits: {total_splits_fails}
+          Total Verifications for Splits: {total_verif_splits}
+
+          Overall Average Time per Succeeded Split: {:.2e} s
+          Total Time for All Succeeded Splits: {:.2e} s
+
+          Overall Average Time per Failed Split: {:.2e} s
+          Total Time for All Failed Splits: {:.2e} s
+
+          Overall Average Time per Split Verification: {:.2e} s
+          Total Time for All Split Verifications: {:.2e} s",
+            if total_splits > 0 {
+                total_splits_time_absolute / f64::from(total_splits)
+            } else {
+                0.0
+            },
+            total_splits_time_absolute,
+            if total_splits_fails > 0 {
+                total_split_fail_time_absolute / f64::from(total_splits_fails)
+            } else {
+                0.0
+            },
+            total_split_fail_time_absolute,
+            if total_verif_splits > 0 {
+                total_verifs_time_splits_absolute / f64::from(total_verif_splits)
+            } else {
+                0.0
+            },
+            total_verifs_time_splits_absolute,
         );
-        println!("------------------------------------");
+
+        println!(
+            "\nCollapses (Total in Remeshing Process):
+          Total Collapse Steps: {nb_collapse_step}
+          Total Collapses Performed: {total_collapses}
+          Total Failed Collapses: {total_collapses_fails}
+          Total Verifications for Collapses: {total_verif_collapses}
+
+          Overall Average Time per Succeeded Collapse: {:.2e} s
+          Total Time for All Succeeded Collapses: {:.2e} s
+
+          Overall Average Time per Failed Collapse: {:.2e} s
+          Total Time for All Failed Collapses: {:.2e} s
+
+          Overall Average Time per Collapse Verification: {:.2e} s
+          Total Time for All Collapse Verifications: {:.2e} s",
+            if total_collapses > 0 {
+                total_collapse_success_time_absolute / f64::from(total_collapses)
+            } else {
+                0.0
+            },
+            total_collapse_success_time_absolute,
+            if total_collapses_fails > 0 {
+                total_collapse_fail_time_absolute / f64::from(total_collapses_fails)
+            } else {
+                0.0
+            },
+            total_collapse_fail_time_absolute,
+            if total_verif_collapses > 0 {
+                total_verifs_time_collapses_absolute / f64::from(total_verif_collapses)
+            } else {
+                0.0
+            },
+            total_verifs_time_collapses_absolute,
+        );
+
+        println!(
+            "\nSwaps (Total in Remeshing Process):
+          Total Swaps Performed: {total_swaps_performed}
+          Total Failed Swaps: {total_swaps_fails}
+          Total Verifications for Swaps: {total_swaps_verifs}
+
+          Overall Average Time per Succeeded Swap: {:.2e} s
+          Total Time for All Succeeded Swaps: {:.2e} s
+
+          Overall Average Time per Failed Swap: {:.2e} s
+          Total Time for All Failed Swaps: {:.2e} s
+
+          Overall Average Time per Swap Verification: {:.2e} s
+          Total Time for All Swap Verifications: {:.2e} s",
+            // Calculation for number of successful swaps
+            if total_swaps_performed - total_swaps_fails - total_swaps_verifs > 0 {
+                total_swap_success_time_absolute
+                    / f64::from(total_swaps_performed - total_swaps_fails - total_swaps_verifs)
+            } else {
+                0.0
+            },
+            total_swap_success_time_absolute,
+            if total_swaps_fails > 0 {
+                total_swap_fail_time_absolute / f64::from(total_swaps_fails)
+            } else {
+                0.0
+            },
+            total_swap_fail_time_absolute,
+            if total_swaps_verifs > 0 {
+                total_swap_verif_time_absolute / f64::from(total_swaps_verifs)
+            } else {
+                0.0
+            },
+            total_swap_verif_time_absolute,
+        );
+
+        println!(
+            "\nSmooth Operations (Total in Remeshing Process):
+          Total Failed Smooths: {total_smooth_fails}",
+        );
+
+        println!("\n------------------------------------");
     }
 }
 

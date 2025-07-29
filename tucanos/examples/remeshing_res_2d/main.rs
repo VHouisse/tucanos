@@ -55,17 +55,6 @@ const H_OUTSIDE_CIRCLE_ISO: f64 = 0.1;
 const H_INSIDE_CIRCLE_ANISO: f64 = 0.01;
 const H_OUTSIDE_CIRCLE_ANISO: f64 = 0.2;
 
-fn calculate_iso_metric(p: Point<2>) -> f64 {
-    let mut res = H_OUTSIDE_CIRCLE_ISO;
-    let x = p[0];
-    let y = p[1];
-    let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2);
-
-    if dist_sq <= RADIUS_SQ_ACTUAL {
-        res = H_INSIDE_CIRCLE_ISO;
-    }
-    res
-}
 fn calculate_split_metric(
     mesh: &SimplexMesh<2, Triangle>, // Spécifier D=2 et E=Triangle
 ) -> Vec<AnisoMetric2d> {
@@ -87,7 +76,17 @@ fn calculate_split_metric(
     }
     result_metrics
 }
+fn calculate_iso_metric(p: Point<2>) -> f64 {
+    let mut res = H_OUTSIDE_CIRCLE_ISO;
+    let x = p[0];
+    let y = p[1];
+    let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2);
 
+    if dist_sq <= RADIUS_SQ_ACTUAL {
+        res = H_INSIDE_CIRCLE_ISO;
+    }
+    res
+}
 /// Calculates the anisotropic metric value for a given point.
 fn calculate_aniso_metric(p: Point<2>) -> f64 {
     let mut res = H_OUTSIDE_CIRCLE_ANISO;

@@ -63,7 +63,6 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         debug: bool,
     ) -> Result<u32> {
         debug!("Split edges with length > {:.2e}", params.l);
-        let time = Instant::now();
         let l_min = params.min_l_abs;
         debug!("min. allowed length: {l_min:.2}");
         let q_min = params.min_q_abs;
@@ -71,6 +70,9 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
         let mut n_iter = 0;
         let mut cavity = Cavity::new();
+        let mut total_fail_op_duration = std::time::Duration::new(0, 0);
+        let mut total_verification_duration = std::time::Duration::new(0, 0); // Temps total des vérifications
+        let mut total_success_op_duration = std::time::Duration::new(0, 0);
         loop {
             n_iter += 1;
 
@@ -86,11 +88,14 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             let mut n_splits = 0;
             let mut n_fails = 0;
             let mut n_removed = 0;
+            let mut n_verifs = 0;
             for i_edge in indices {
+                let verif_time = Instant::now();
                 let edg = edges[i_edge];
                 let length = dims_and_lengths[i_edge].1;
                 if length > params.l {
                     trace!("Try to split edge {edg:?}, l = {length}");
+                    let attempt_start_time = Instant::now();
                     cavity.init_from_edge(edg, self);
                     // TODO: move to Cavity?
                     let Seed::Edge(local_edg) = cavity.seed else {
@@ -107,6 +112,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
                     // tag < 0 on fixed boundaries
                     if tag.1 < 0 {
+                        total_fail_op_duration += attempt_start_time.elapsed();
                         continue;
                     }
 
@@ -145,6 +151,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                         for (b, t) in filled_cavity.tagged_faces_boundary_global() {
                             self.add_tagged_face(E::Face::from_vertex_and_face(ip, &b), t)?;
                         }
+                        total_success_op_duration += attempt_start_time.elapsed();
                         n_splits += 1;
                     } else if matches!(status, CavityCheckStatus::Invalid)
                         && cavity.elems.len() == 1
@@ -184,29 +191,37 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                                     self.add_tagged_face(f, face_tag)?;
                                 }
                             }
+                            total_fail_op_duration += attempt_start_time.elapsed();
                             n_removed += 1;
                         }
                     } else {
+                        total_success_op_duration += attempt_start_time.elapsed();
                         n_fails += 1;
                     }
+                } else {
+                    total_verification_duration += verif_time.elapsed();
+                    n_verifs += 1;
                 }
             }
 
             debug!(
                 "Iteration {n_iter}: {n_splits} edges split ({n_fails} failed - {n_removed} elements removed)"
             );
-            let exec_time = time.elapsed();
-            self.stats.push(StepStats::Split(SplitStats::new(
-                n_splits,
-                n_fails,
-                self,
-                exec_time.as_secs_f64(),
-            )));
 
             if n_splits == 0 || n_iter == params.max_iter {
                 if debug {
                     self.check().unwrap();
                 }
+                self.stats.push(StepStats::Split(SplitStats::new(
+                    n_splits,
+                    n_fails + n_removed,
+                    n_verifs,
+                    self,
+                    total_verification_duration.as_secs_f64(),
+                    total_success_op_duration.as_secs_f64(),
+                    total_fail_op_duration.as_secs_f64(),
+                )));
+
                 return Ok(n_iter);
             }
         }
