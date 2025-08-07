@@ -1,3 +1,4 @@
+use core::f64;
 use rayon::iter::ParallelIterator;
 use std::marker::PhantomData;
 
@@ -6,7 +7,7 @@ use crate::{
     mesh::{Elem, SimplexMesh},
     metric::{AnisoMetric2d, HasImpliedMetric, IsoMetric, Metric},
 };
-const ADD_PERCENTAGE: f64 = 40.0;
+// const ADD_PERCENTAGE: f64 = 40.0;
 pub trait ElementCostEstimator<const D: usize, E: Elem, M: Metric<D>>: Send + Sync {
     fn new(m: &[M]) -> Self;
     // fn compute(&self) -> Vec<f64>;
@@ -50,12 +51,13 @@ pub struct TotoCostEstimator<
 fn work_eval(initial_density: f64, actual_density: f64, intersected_density: f64, vol: f64) -> f64 {
     // Set up to csts and evaluate real coeff
     let insert_c: f64 = 1.0; //1.0
-    let collapse_c: f64 = 1.3; //1.3 
-    let optimization_c: f64 = 3.3; //3.3
+    let collapse_c: f64 = 1.0; //1.3 
+    let verif_cost = 0.1;
     vol * (insert_c * (intersected_density - initial_density)
-        + collapse_c * (intersected_density - actual_density)
-        + optimization_c * actual_density)
+        + collapse_c * (intersected_density - actual_density))
+        + verif_cost * 4.0
 }
+
 #[allow(clippy::new_without_default)]
 impl<
     const D: usize,
@@ -96,7 +98,7 @@ where
     >>::ImpliedMetricType;
 
     fn compute(&self, msh: &SimplexMesh<D, E>, m: &[M]) -> Vec<f64> {
-        let work: Vec<_> = msh
+        let weights: Vec<f64> = msh
             .par_elems()
             .map(|e| {
                 let ge = msh.gelem(e);
@@ -113,9 +115,14 @@ where
                 work_eval(d_initial_metric, d_target_metric, d_intersected, vol)
             })
             .collect();
-        let sum_work: f64 = work.iter().sum();
-        work.iter()
-            .map(|&w| w + ADD_PERCENTAGE * sum_work)
-            .collect()
+        let (min, max, _sum) = weights.iter().fold((f64::MAX, f64::MIN, 0.0), |a, &b| {
+            (a.0.min(b), a.1.max(b), a.2 + b)
+        });
+        let diff = max - min;
+        let fixed_weight = diff * (1.0 / f64::from(msh.n_verts())).cbrt();
+        println!("Fixed Weight {fixed_weight}");
+        weights.iter().map(|&w| w + fixed_weight).collect()
+
+        // let sum_work: f64 = work.iter().sum();
     }
 }
