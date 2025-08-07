@@ -426,21 +426,71 @@ impl fmt::Display for CollapseStats {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct SmoothStats {
+    n_smooths: Idx,
     n_fails: Idx,
+    n_verifs: Idx,
     r_stats: RemesherStats,
+    total_verif_time: f64,
+    total_smooth_time: f64,
+    total_fails_time: f64,
 }
 
 impl SmoothStats {
-    pub fn new<const D: usize, E: Elem, M: Metric<D>>(n_fails: Idx, r: &Remesher<D, E, M>) -> Self {
+    pub fn new<const D: usize, E: Elem, M: Metric<D>>(
+        n_smooths: Idx,
+        n_fails: Idx,
+        n_verifs: Idx,
+        r: &Remesher<D, E, M>,
+        total_verif_time: f64,
+        total_smooth_time: f64,
+        total_fails_time: f64,
+    ) -> Self {
         Self {
+            n_smooths,
             n_fails,
+            n_verifs,
             r_stats: RemesherStats::new(r),
+            total_verif_time,
+            total_smooth_time,
+            total_fails_time,
         }
     }
+
+    pub const fn get_n_smooths(&self) -> Idx {
+        self.n_smooths
+    }
+
     pub const fn get_n_fails(&self) -> Idx {
         self.n_fails
     }
-    // Implémentation de Display pour StepStats
+
+    pub const fn get_n_verifs(&self) -> Idx {
+        self.n_verifs
+    }
+
+    pub const fn get_time_smooth(&self) -> f64 {
+        if self.n_smooths == 0 {
+            0.0
+        } else {
+            self.total_smooth_time / self.n_smooths as f64
+        }
+    }
+
+    pub const fn get_time_fails(&self) -> f64 {
+        if self.n_fails == 0 {
+            0.0
+        } else {
+            self.total_fails_time / self.n_fails as f64
+        }
+    }
+
+    pub const fn get_time_verif(&self) -> f64 {
+        if self.n_verifs == 0 {
+            0.0
+        } else {
+            self.total_verif_time / self.n_verifs as f64
+        }
+    }
 }
 impl fmt::Display for SmoothStats {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

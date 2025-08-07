@@ -28,12 +28,12 @@ EXAMPLE_2D_NAME="remeshing_res_2d"
 EXAMPLE_3D_NAME="remeshing_res_3d"
 
 # Define the number of repetitions for each simulation
-NUM_REPETITIONS=5 # <--- NOUVEAU : Nombre de répétitions pour chaque simulation
+NUM_REPETITIONS=5
 
 # Define the different parameters to test
 SPLITS_2D=()
-SPLITS_3D=(3 4 5)
-METRIC_TYPES=("iso")
+SPLITS_3D=(4)
+METRIC_TYPES=("aniso")
 COST_ESTIMATORS=("Nocost" "Toto")
 PARTITIONERS=("HilbertBallPartitionner" "BFSPartitionner" "BFSWRPartitionner" "HilbertPartitionner")
 

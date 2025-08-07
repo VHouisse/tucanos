@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use super::Remesher;
 use crate::{
     Dim, Idx, Result,
@@ -227,26 +229,45 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             Self::smooth_laplacian(cavity, neighbors)
         }
     }
-
+    #[allow(clippy::too_many_lines)]
     fn smooth_iter<G: Geometry<D>>(
         &mut self,
         params: &SmoothParams,
         geom: &G,
         cavity: &mut Cavity<D, E, M>,
         verts: &[Idx],
-    ) -> (Idx, Idx, Idx) {
+    ) -> (
+        Idx,
+        Idx,
+        Idx,
+        Idx,
+        std::time::Duration,
+        std::time::Duration,
+        std::time::Duration,
+    ) {
         let (mut n_fails, mut n_min, mut n_smooth) = (0, 0, 0);
+        let mut total_fail_op_duration = std::time::Duration::new(0, 0);
+        let mut total_verification_duration = std::time::Duration::new(0, 0);
+        let mut total_success_op_duration = std::time::Duration::new(0, 0);
+        let mut n_verifs = 0;
+
         for i0 in verts.iter().copied() {
+            let verif_start_time = Instant::now();
+
             trace!("Try to smooth vertex {i0}");
             cavity.init_from_vertex(i0, self);
             let Seed::Vertex(i0_local) = cavity.seed else {
                 unreachable!()
             };
             if cavity.tags[i0_local as usize].0 == 0 {
+                total_verification_duration += verif_start_time.elapsed();
+                n_verifs += 1;
                 continue;
             }
 
             if cavity.tags[i0_local as usize].1 < 0 {
+                total_verification_duration += verif_start_time.elapsed();
+                n_verifs += 1;
                 continue;
             }
 
@@ -254,15 +275,23 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
             if params.keep_local_minima && is_local_minimum {
                 trace!("Won't smooth, local minimum of m");
+                total_verification_duration += verif_start_time.elapsed();
+                n_verifs += 1;
                 n_min += 1;
                 continue;
             }
 
             if neighbors.is_empty() {
                 trace!("Cannot smooth, no suitable neighbor");
+                total_verification_duration += verif_start_time.elapsed();
+                n_verifs += 1;
                 continue;
             }
 
+            total_verification_duration += verif_start_time.elapsed();
+            n_verifs += 1;
+
+            let attempt_start_time = Instant::now();
             let p0 = &cavity.points[i0_local as usize];
             let m0 = &cavity.metrics[i0_local as usize];
             let t0 = &cavity.tags[i0_local as usize];
@@ -307,6 +336,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             }
 
             if !valid {
+                total_fail_op_duration += attempt_start_time.elapsed();
                 n_fails += 1;
                 trace!("Smooth, no smoothing is valid");
                 continue;
@@ -340,14 +370,24 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
 
             for (i_local, i_global) in cavity.global_elem_ids.iter().enumerate() {
                 // update the quality
-                let ge = cavity.gelem(i_local as Idx); // todo: precompute all ge
+                let ge = cavity.gelem(i_local as Idx);
                 self.elems.get_mut(i_global).unwrap().q = ge.quality();
             }
+            total_success_op_duration += attempt_start_time.elapsed();
             n_smooth += 1;
         }
 
-        (n_fails, n_min, n_smooth)
+        (
+            n_fails,
+            n_min,
+            n_smooth,
+            n_verifs,
+            total_verification_duration,
+            total_success_op_duration,
+            total_fail_op_duration,
+        )
     }
+
     /// Perform mesh smoothing
     pub fn smooth<G: Geometry<D>>(
         &mut self,
@@ -361,16 +401,33 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
         // the keys. Apart from going unsafe the only way to avoid this would be
         // to have one RefCell for each VtxInfo but copying self.verts is cheaper.
         let verts = self.verts.keys().copied().collect::<Vec<_>>();
-
         let mut cavity = Cavity::new();
+
         for iter in 0..params.n_iter {
-            let (n_fails, n_min, n_smooth) = self.smooth_iter(params, geom, &mut cavity, &verts);
+            let (
+                n_fails,
+                n_min,
+                n_smooth,
+                n_verifs,
+                total_verif_time,
+                total_smooth_time,
+                total_fails_time,
+            ) = self.smooth_iter(params, geom, &mut cavity, &verts);
+
             debug!(
                 "Iteration {}: {n_smooth} vertices moved, {n_fails} fails, {n_min} local minima",
                 iter + 1,
             );
-            self.stats
-                .push(StepStats::Smooth(SmoothStats::new(n_fails, self)));
+
+            self.stats.push(StepStats::Smooth(SmoothStats::new(
+                n_smooth,
+                n_fails + n_min,
+                n_verifs,
+                self,
+                total_verif_time.as_secs_f64(),
+                total_smooth_time.as_secs_f64(),
+                total_fails_time.as_secs_f64(),
+            )));
         }
         if debug {
             self.check()?;

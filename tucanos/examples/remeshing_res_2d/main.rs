@@ -2,6 +2,7 @@
 use clap::Parser;
 #[cfg(feature = "metis")]
 use clap::Parser;
+use log::debug;
 use std::{path::Path, time::Instant};
 
 #[cfg(feature = "metis")]
@@ -22,8 +23,8 @@ use tucanos::{
     mesh::{Edge, Elem, HasTmeshImpl, Point, SimplexMesh, Triangle, test_meshes::test_mesh_2d},
     metric::{AnisoMetric, AnisoMetric2d, HasImpliedMetric, IsoMetric, Metric},
     remesher::{
-        ElementCostEstimator, NoCostEstimator, ParallelRemesher, ParallelRemesherParams,
-        RemesherParams, TotoCostEstimator,
+        ElementCostEstimator, NoCostEstimator, ParallelRemeshingInfo, Remesher, RemesherParams,
+        RemeshingInfo, TotoCostEstimator,
     },
 };
 
@@ -36,7 +37,7 @@ struct Args {
     #[arg(short, long, default_value_t = String::from("iso"))]
     metric_type: String,
 
-    #[arg(short, long, default_value_t = 4)]
+    #[arg(short, long, default_value_t = 32)]
     n_parts: u32,
 
     #[arg(short, long, default_value_t = String::from("Toto"))]
@@ -48,10 +49,10 @@ struct Args {
 
 const CENTER_X: f64 = 0.3;
 const CENTER_Y: f64 = 0.3;
-const RADIUS: f64 = 0.1;
-const RADIUS_SQ_ACTUAL: f64 = RADIUS * RADIUS;
-const H_INSIDE_CIRCLE_ISO: f64 = 0.005;
-const H_OUTSIDE_CIRCLE_ISO: f64 = 0.1;
+const RADIUS: f64 = 0.2;
+const RADIUS_SQ_ACTUAL: f64 = RADIUS * 1.0;
+const H_INSIDE_CIRCLE_ISO: f64 = 1.0;
+const H_OUTSIDE_CIRCLE_ISO: f64 = 0.05;
 const H_INSIDE_CIRCLE_ANISO: f64 = 0.01;
 const H_OUTSIDE_CIRCLE_ANISO: f64 = 0.2;
 
@@ -63,8 +64,9 @@ fn calculate_split_metric(
     let e2e = mesh.get_vertex_to_elems().unwrap();
     for i_vert in verts {
         let elems = e2e.row(i_vert);
-        let gelem = mesh.gelem(mesh.elem(elems[0] as u32));
-        let mut chosen_metric = gelem.implied_metric();
+        let _gelem = mesh.gelem(mesh.elem(elems[0] as u32));
+        let mut chosen_metric =
+            AnisoMetric2d::from_iso(&IsoMetric::<2>::from(H_OUTSIDE_CIRCLE_ISO));
         let p = mesh.vert(i_vert as u32);
         let x = p[0];
         let y = p[1];
@@ -100,6 +102,9 @@ fn calculate_aniso_metric(p: Point<2>) -> f64 {
     res * (1.0 + 0.5 * (x - CENTER_X).abs())
 }
 
+#[allow(clippy::unnecessary_wraps)]
+#[allow(clippy::extra_unused_type_parameters)]
+#[allow(clippy::needless_pass_by_value)]
 fn perform_remeshing<
     const D: usize,
     E: Elem,
@@ -113,7 +118,7 @@ fn perform_remeshing<
     metrics: Vec<M>,
     cost_estimator_name: &str,
     partitioner_name: &str,
-    n_parts: u32,
+    _n_parts: u32,
     metric_type_arg: &str,
 ) -> Result<()>
 where
@@ -123,13 +128,28 @@ where
 {
     msh.compute_volumes();
     let n_elements = msh.n_elems();
-    let remesher = ParallelRemesher::<D, E, M, P, C>::new(msh, metrics, n_parts)?;
-    let dd_params = ParallelRemesherParams::default();
+    let n_verts_init = msh.n_verts();
+
+    // let remesher = ParallelRemesher::<D, E, M, P, C>::new(msh, metrics, n_parts)?;
+    // let dd_params = ParallelRemesherParams::default();
+    let mut remesher = Remesher::new(&msh, &metrics, geom).unwrap();
     let params = RemesherParams::default();
-    let time = Instant::now();
-    _ = remesher.remesh(geom, params, &dd_params).unwrap();
-    let t2 = time.elapsed();
-    println!(
+    let now = Instant::now();
+    let stats = remesher.remesh(&params, geom).unwrap();
+
+    let infos = ParallelRemeshingInfo {
+        info: RemeshingInfo {
+            n_verts_init,
+            n_verts_final: 100,
+            time: now.elapsed().as_secs_f64(),
+            remesh_stats: stats,
+        },
+        ..Default::default()
+    };
+    infos.info.print_summary_remesh_stats();
+    let t2 = now.elapsed();
+
+    debug!(
         "DATA,D={D},metric_type={metric_type_arg},cost_estimator={cost_estimator_name},partitioner={partitioner_name},num_elements={n_elements},time_seconds={t2:?}"
     );
     Ok(())

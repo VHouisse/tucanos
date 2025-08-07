@@ -15,7 +15,7 @@ use tmesh::{
 use tucanos::{
     mesh::{Point, SimplexMesh, Triangle, test_meshes::test_mesh_2d},
     metric::IsoMetric,
-    remesher::{ElementCostEstimator, TotoCostEstimator},
+    remesher::{ElementCostEstimator, NoCostEstimator},
 };
 //use tucanos::remesher::{Remesher, RemesherParams};
 
@@ -59,14 +59,8 @@ pub fn main() -> Result<()> {
     if !output_dir.exists() {
         std::fs::create_dir(output_dir)?;
     }
-    let mut msh = test_mesh_2d()
-        .split()
-        .split()
-        .split()
-        .split()
-        .split()
-        .split()
-        .split();
+    let mut msh = test_mesh_2d().split().split().split().split().split();
+
     let file_name = "Maillage_Iso.vtu".to_string();
     let output_path = output_dir.join(&file_name);
     let _ = msh.write_vtk(output_path.to_str().unwrap());
@@ -78,7 +72,7 @@ pub fn main() -> Result<()> {
         .map(|v| IsoMetric::<2>::from(calculate_iso_metric(v)))
         .collect();
     msh.compute_volumes();
-    let estimator = TotoCostEstimator::<2, Triangle, IsoMetric<2>>::new(&m);
+    let estimator = NoCostEstimator::<2, Triangle, IsoMetric<2>>::new(&m);
     let weights = estimator.compute(&msh, &m);
     let start = Instant::now();
     let (quality, imbalance) = msh.partition::<HilbertPartitioner>(n_parts, Some(weights))?;

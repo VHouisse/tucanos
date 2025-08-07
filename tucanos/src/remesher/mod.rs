@@ -10,7 +10,9 @@ mod swap;
 
 pub use collapse::CollapseParams;
 pub use cost_estimator::{ElementCostEstimator, NoCostEstimator, TotoCostEstimator};
-pub use parallel::{ParallelRemesher, ParallelRemesherParams, ParallelRemeshingInfo};
+pub use parallel::{
+    ParallelRemesher, ParallelRemesherParams, ParallelRemeshingInfo, RemeshingInfo,
+};
 pub use sequential::{Remesher, RemesherParams, RemeshingStep};
 pub use smooth::{SmoothParams, SmoothingMethod};
 pub use split::SplitParams;

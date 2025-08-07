@@ -101,30 +101,39 @@ pub struct RemesherParams {
     pub debug: bool,
 }
 
+#[allow(clippy::vec_init_then_push)]
 impl Default for RemesherParams {
     fn default() -> Self {
         let mut steps = Vec::new();
-        for _ in 0..4 {
-            steps.push(RemeshingStep::Collapse(CollapseParams::default()));
-            steps.push(RemeshingStep::Split(SplitParams::default()));
-            steps.push(RemeshingStep::Swap(SwapParams {
-                q: 0.4,
-                ..SwapParams::default()
-            }));
-            steps.push(RemeshingStep::Swap(SwapParams {
-                q: 0.8,
-                ..SwapParams::default()
-            }));
-            steps.push(RemeshingStep::Smooth(SmoothParams::default()));
-        }
+        // for _ in 0..4 {
+        //     steps.push(RemeshingStep::Collapse(CollapseParams::default()));
+        //     steps.push(RemeshingStep::Split(SplitParams::default()));
+        //     steps.push(RemeshingStep::Swap(SwapParams {
+        //         q: 0.4,
+        //         ..SwapParams::default()
+        //     }));
+        //     steps.push(RemeshingStep::Swap(SwapParams {
+        //         q: 0.8,
+        //         ..SwapParams::default()
+        //     }));
+        //     steps.push(RemeshingStep::Smooth(SmoothParams::default()));
+        // }
+        // steps.push(RemeshingStep::Swap(SwapParams {
+        //     q: 0.4,
+        //     ..SwapParams::default()
+        // }));
+        // steps.push(RemeshingStep::Swap(SwapParams {
+        //     q: 0.8,
+        //     ..SwapParams::default()
+        // }));
+        steps.push(RemeshingStep::Collapse(CollapseParams::default()));
+        steps.push(RemeshingStep::Split(SplitParams::default()));
         steps.push(RemeshingStep::Swap(SwapParams {
             q: 0.4,
             ..SwapParams::default()
         }));
-        steps.push(RemeshingStep::Swap(SwapParams {
-            q: 0.8,
-            ..SwapParams::default()
-        }));
+        steps.push(RemeshingStep::Smooth(SmoothParams::default()));
+
         Self {
             steps,
             debug: false,

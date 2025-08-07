@@ -861,6 +861,7 @@ impl<T: MetisPartMethod + std::marker::Sync + std::marker::Send> Partitioner
             .iter()
             .map(|&w| (w * scaling_factor).round() as metis::Idx)
             .collect();
+        println!("weights : {vwgt:?}");
         let metis_graph =
             metis::Graph::new(1, self.n_parts.try_into().unwrap(), &mut xadj, &mut adjncy)
                 .set_vwgt(&mut vwgt);

@@ -195,7 +195,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                             n_removed += 1;
                         }
                     } else {
-                        total_success_op_duration += attempt_start_time.elapsed();
+                        total_fail_op_duration += attempt_start_time.elapsed();
                         n_fails += 1;
                     }
                 } else {

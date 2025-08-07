@@ -239,20 +239,19 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
                 "Iteration {n_iter}: {n_swaps} edges swapped ({n_fails} failed, {n_verifs_attempted} checked/ok)"
             );
 
-            self.stats.push(StepStats::Swap(SwapStats::new(
-                n_swaps + n_fails + n_verifs_attempted,
-                n_fails,
-                n_verifs_attempted,
-                total_success_time,
-                total_fail_time,
-                total_verif_time,
-                self,
-            )));
-
             if n_swaps == 0 || n_iter == params.max_iter {
                 if debug {
                     self.check().unwrap();
                 }
+                self.stats.push(StepStats::Swap(SwapStats::new(
+                    n_swaps,
+                    n_fails,
+                    n_verifs_attempted,
+                    total_success_time,
+                    total_fail_time,
+                    total_verif_time,
+                    self,
+                )));
                 return Ok(n_iter);
             }
         }

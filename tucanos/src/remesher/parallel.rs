@@ -74,7 +74,7 @@ pub struct RemeshingInfo {
 }
 impl RemeshingInfo {
     #[allow(clippy::too_many_lines)]
-    fn print_summary_remesh_stats(&self) {
+    pub fn print_summary_remesh_stats(&self) {
         let mut nb_split_step = 0;
         let mut total_verif_splits = 0;
         let mut total_splits = 0;
@@ -91,6 +91,7 @@ impl RemeshingInfo {
         let mut total_collapse_fail_time_absolute = 0.0;
         let mut total_verifs_time_collapses_absolute = 0.0;
 
+        let mut nb_swap_step = 0;
         let mut total_swaps_performed = 0;
         let mut total_swaps_fails = 0;
         let mut total_swaps_verifs = 0;
@@ -98,7 +99,14 @@ impl RemeshingInfo {
         let mut total_swap_fail_time_absolute = 0.0;
         let mut total_swap_verif_time_absolute = 0.0;
 
-        let mut total_smooth_fails = 0;
+        let mut nb_smooth_step = 0;
+        let mut total_smooths_performed = 0;
+        let mut total_smooths_fails = 0;
+        let mut total_smooths_verifs = 0;
+        let mut total_smooth_success_time_absolute = 0.0;
+        let mut total_smooth_fail_time_absolute = 0.0;
+        let mut total_smooth_verif_time_absolute = 0.0;
+
         let mut _t_init = 0;
 
         for step_stat in self.remesh_stats.clone() {
@@ -121,8 +129,8 @@ impl RemeshingInfo {
                     total_collapse_fail_time_absolute += s.get_t_time_fails();
                     total_verifs_time_collapses_absolute += s.get_t_time_verif();
                 }
-
                 StepStats::Swap(s) => {
+                    nb_swap_step += 1;
                     total_swaps_performed += s.get_n_swaps();
                     total_swaps_fails += s.get_n_fails();
                     total_swaps_verifs += s.get_n_verifs();
@@ -131,7 +139,13 @@ impl RemeshingInfo {
                     total_swap_verif_time_absolute += s.get_t_time_swaps_verif();
                 }
                 StepStats::Smooth(s) => {
-                    total_smooth_fails += s.get_n_fails();
+                    nb_smooth_step += 1;
+                    total_smooths_performed += s.get_n_smooths();
+                    total_smooths_fails += s.get_n_fails();
+                    total_smooths_verifs += s.get_n_verifs();
+                    total_smooth_success_time_absolute += s.get_time_smooth();
+                    total_smooth_fail_time_absolute += s.get_time_fails();
+                    total_smooth_verif_time_absolute += s.get_time_verif();
                 }
                 StepStats::Init(_s) => {
                     _t_init = 0;
@@ -143,10 +157,10 @@ impl RemeshingInfo {
 
         println!(
             "\nSplits (Total in Remeshing Process):
-          Total Split Steps: {nb_split_step}
-          Total Splits Performed: {total_splits}
-          Total Failed Splits: {total_splits_fails}
-          Total Verifications for Splits: {total_verif_splits}
+          Total Split Steps: {}
+          Total Splits Performed: {}
+          Total Failed Splits: {}
+          Total Verifications for Splits: {}
 
           Overall Average Time per Succeeded Split: {:.2e} s
           Total Time for All Succeeded Splits: {:.2e} s
@@ -156,6 +170,10 @@ impl RemeshingInfo {
 
           Overall Average Time per Split Verification: {:.2e} s
           Total Time for All Split Verifications: {:.2e} s",
+            nb_split_step,
+            total_splits,
+            total_splits_fails,
+            total_verif_splits,
             if total_splits > 0 {
                 total_splits_time_absolute / f64::from(total_splits)
             } else {
@@ -178,10 +196,10 @@ impl RemeshingInfo {
 
         println!(
             "\nCollapses (Total in Remeshing Process):
-          Total Collapse Steps: {nb_collapse_step}
-          Total Collapses Performed: {total_collapses}
-          Total Failed Collapses: {total_collapses_fails}
-          Total Verifications for Collapses: {total_verif_collapses}
+          Total Collapse Steps: {}
+          Total Collapses Performed: {}
+          Total Failed Collapses: {}
+          Total Verifications for Collapses: {}
 
           Overall Average Time per Succeeded Collapse: {:.2e} s
           Total Time for All Succeeded Collapses: {:.2e} s
@@ -191,6 +209,10 @@ impl RemeshingInfo {
 
           Overall Average Time per Collapse Verification: {:.2e} s
           Total Time for All Collapse Verifications: {:.2e} s",
+            nb_collapse_step,
+            total_collapses,
+            total_collapses_fails,
+            total_verif_collapses,
             if total_collapses > 0 {
                 total_collapse_success_time_absolute / f64::from(total_collapses)
             } else {
@@ -213,9 +235,10 @@ impl RemeshingInfo {
 
         println!(
             "\nSwaps (Total in Remeshing Process):
-          Total Swaps Performed: {total_swaps_performed}
-          Total Failed Swaps: {total_swaps_fails}
-          Total Verifications for Swaps: {total_swaps_verifs}
+          Total Swap Steps: {}
+          Total Swaps Performed: {}
+          Total Failed Swaps: {}
+          Total Verifications for Swaps: {}
 
           Overall Average Time per Succeeded Swap: {:.2e} s
           Total Time for All Succeeded Swaps: {:.2e} s
@@ -225,10 +248,12 @@ impl RemeshingInfo {
 
           Overall Average Time per Swap Verification: {:.2e} s
           Total Time for All Swap Verifications: {:.2e} s",
-            // Calculation for number of successful swaps
-            if total_swaps_performed - total_swaps_fails - total_swaps_verifs > 0 {
-                total_swap_success_time_absolute
-                    / f64::from(total_swaps_performed - total_swaps_fails - total_swaps_verifs)
+            nb_swap_step,
+            total_swaps_performed,
+            total_swaps_fails,
+            total_swaps_verifs,
+            if total_swaps_performed > 0 {
+                total_swap_success_time_absolute / f64::from(total_swaps_performed)
             } else {
                 0.0
             },
@@ -248,8 +273,42 @@ impl RemeshingInfo {
         );
 
         println!(
-            "\nSmooth Operations (Total in Remeshing Process):
-          Total Failed Smooths: {total_smooth_fails}",
+            "\nSmooths (Total in Remeshing Process):
+          Total Smooth Steps: {}
+          Total Smooths Performed: {}
+          Total Failed Smooths: {}
+          Total Verifications for Smooths: {}
+
+          Overall Average Time per Succeeded Smooth: {:.2e} s
+          Total Time for All Succeeded Smooths: {:.2e} s
+
+          Overall Average Time per Failed Smooth: {:.2e} s
+          Total Time for All Failed Smooths: {:.2e} s
+
+          Overall Average Time per Smooth Verification: {:.2e} s
+          Total Time for All Smooth Verifications: {:.2e} s",
+            nb_smooth_step,
+            total_smooths_performed,
+            total_smooths_fails,
+            total_smooths_verifs,
+            if total_smooths_performed > 0 {
+                total_smooth_success_time_absolute / f64::from(total_smooths_performed)
+            } else {
+                0.0
+            },
+            total_smooth_success_time_absolute,
+            if total_smooths_fails > 0 {
+                total_smooth_fail_time_absolute / f64::from(total_smooths_fails)
+            } else {
+                0.0
+            },
+            total_smooth_fail_time_absolute,
+            if total_smooths_verifs > 0 {
+                total_smooth_verif_time_absolute / f64::from(total_smooths_verifs)
+            } else {
+                0.0
+            },
+            total_smooth_verif_time_absolute,
         );
 
         println!("\n------------------------------------");
@@ -258,32 +317,37 @@ impl RemeshingInfo {
 
 #[derive(Default, Serialize)]
 pub struct ParallelRemeshingInfo {
-    info: RemeshingInfo,
-    partition_time: f64,
-    partition_quality: f64,
-    partition_imbalance: f64,
-    partitions: Vec<RemeshingInfo>,
-    interface: Option<Box<ParallelRemeshingInfo>>,
+    pub info: RemeshingInfo,
+    pub partition_time: f64,
+    pub partition_quality: f64,
+    pub partition_imbalance: f64,
+    pub remeshing_time_imbalance: f64,
+    pub partitions: Vec<RemeshingInfo>,
+    pub interface: Option<Box<ParallelRemeshingInfo>>,
+    pub remeshing_time: f64,
 }
 
 impl ParallelRemeshingInfo {
     fn print_short(&self, indent: String) {
         let s = &self.info;
         if self.partition_quality > 0.0 {
+            for s in &self.partitions {
+                if s.n_verts_init == 0 {
+                    return;
+                }
+            }
+
             println!(
-                "{} -> {} verts, partition quality = {}, partition imbalance = {}, {:.2e} secs",
-                s.n_verts_init,
-                s.n_verts_final,
-                self.partition_quality,
-                self.partition_imbalance,
-                s.time,
+                "{} -> {} verts, partition quality = {}, partition imbalance = {}",
+                s.n_verts_init, s.n_verts_final, self.partition_quality, self.partition_imbalance,
             );
             for (i, s) in self.partitions.iter().enumerate() {
                 println!(
                     "{indent} partition {i}: {} -> {} verts, {:.2e} secs",
                     s.n_verts_init, s.n_verts_final, s.time
                 );
-                s.print_summary_remesh_stats();
+
+                //s.print_summary_remesh_stats();
             }
             if let Some(ifc) = &self.interface {
                 print!("{indent} interface: ");
@@ -296,12 +360,25 @@ impl ParallelRemeshingInfo {
             );
         }
     }
+    #[must_use]
+    pub fn remeshing_imbalance(&self) -> f64 {
+        let mut remeshing_times = Vec::new();
+        for part in &self.partitions {
+            remeshing_times.push(part.time);
+        }
+        let (min, max, avg) = remeshing_times
+            .iter()
+            .fold((f64::MAX, f64::MIN, 0.0), |a, &b| {
+                (a.0.min(b), a.1.max(b), a.2 + b)
+            });
+        let avg = avg / remeshing_times.len() as f64;
+        (max - min) / avg
+    }
 
     pub fn print_summary(&self) {
         self.print_short(String::from("  "));
     }
-
-    #[must_use]
+    #[allow(clippy::must_use_candidate)]
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(&self).unwrap()
     }
@@ -354,22 +431,24 @@ where
         let now = Instant::now();
         let estimator = C::new(&metric);
         let weights = estimator.compute(&mesh, &metric); //println!("Weights {weights:?}");
+        let weights_time = now.elapsed();
+        println!("Tps d'éxécution du weight computing : {weights_time:?}");
+        let now = Instant::now();
         let (partition_quality, partition_imbalance) =
             mesh.partition_elems::<P>(n_parts, Some(weights))?;
-        println!(
-            "Qualité de la partition : {partition_quality}, Répartition du travail : {partition_imbalance}"
-        );
+        // println!(
+        //     "Qualité de la partition : {partition_quality}, Répartition du travail : {partition_imbalance}"
+        // );
         let partition_time = now.elapsed().as_secs_f64();
-
+        println!("Tps d'éxécution du partitionnement : {partition_time}");
         // Get the partition interfaces
         let (bdy_tags, ifc_tags) = mesh.add_boundary_faces();
         assert!(bdy_tags.is_empty());
-
         let partition_tags = mesh.etags().collect::<FxHashSet<_>>();
         let partition_tags = partition_tags.iter().copied().collect::<Vec<_>>();
         let partition_bdy_tags = ifc_tags.keys().copied().collect::<Vec<_>>();
         debug!("Partition tags: {partition_tags:?}");
-
+        println!("ifc tags:{partition_bdy_tags:?}");
         // Use negative tags for interfaces
         mesh.mut_ftags().for_each(|t| {
             if partition_bdy_tags.contains(t) {
@@ -606,15 +685,18 @@ where
                 let mut ifc_m = ifc_m.lock().unwrap();
                 ifc_m.extend(ids.iter().map(|&i| local_m[i]));
             });
-
+        let par_remeshing_time = now.elapsed();
+        println!("Remeshing time without interfaces {par_remeshing_time:?}");
+        let now = Instant::now();
         let mut ifc = ifc.into_inner().unwrap();
+        // let n_elemnt_ifc = ifc.n_elems();
+        // let n_verts_ifc = ifc.n_verts();
         if self.debug {
             let fname = format!("level_{level}_ifc.vtu");
             ifc.vtu_writer().export(&fname).unwrap();
             let fname = format!("level_{level}_ifc_bdy.vtu");
             ifc.boundary().0.vtu_writer().export(&fname).unwrap();
         }
-
         // to be consistent with the base topology
         ifc.mut_etags().for_each(|t| *t = 1);
         ifc.remove_faces(|t| self.is_partition_bdy(t));
@@ -656,6 +738,8 @@ where
                 partition_time: 0.0,
                 partition_quality: 0.0,
                 partition_imbalance: 0.0,
+                remeshing_time: 0.0,
+                remeshing_time_imbalance: 0.0,
                 partitions: Vec::new(),
                 interface: None,
             }));
@@ -680,6 +764,9 @@ where
 
         res.remove_faces(|t| self.is_interface_bdy(t));
         res.mut_etags().for_each(|t| *t = 1);
+
+        let interface_remeshing_time = now.elapsed();
+        println!("Interface remeshing time : {interface_remeshing_time:?}");
         if self.debug {
             res.compute_face_to_elems();
             res.check_simple().unwrap();
@@ -692,7 +779,12 @@ where
 
         info.info.n_verts_final = res.n_verts();
         info.info.time = now.elapsed().as_secs_f64() + self.partition_time;
-
+        let mut remeshing_ftime = 0.0;
+        for partition_info in &info.partitions {
+            remeshing_ftime += partition_info.time;
+        }
+        info.remeshing_time_imbalance = info.remeshing_imbalance();
+        info.remeshing_time = remeshing_ftime;
         Ok((res, info, res_m))
     }
 }
