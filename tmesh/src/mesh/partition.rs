@@ -810,7 +810,9 @@ pub struct MetisPartitioner<T: MetisPartMethod> {
 }
 
 #[cfg(feature = "metis")]
-impl<T: MetisPartMethod> Partitioner for MetisPartitioner<T> {
+impl<T: MetisPartMethod + std::marker::Sync + std::marker::Send> Partitioner
+    for MetisPartitioner<T>
+{
     fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
         msh: &M,
         n_parts: usize,
@@ -843,9 +845,25 @@ impl<T: MetisPartMethod> Partitioner for MetisPartitioner<T> {
             }
             xadj.push(adjncy.len().try_into().unwrap());
         }
+        let min_weight = self
+            .weights
+            .iter()
+            .filter(|&w| *w > 1e-12)
+            .fold(f64::MAX, |a, &b| a.min(b));
+        let scaling_factor = if min_weight.is_finite() {
+            10.0f64.powf(-min_weight.log10().floor())
+        } else {
+            1.0
+        };
 
+        let mut vwgt: Vec<_> = self
+            .weights
+            .iter()
+            .map(|&w| (w * scaling_factor).round() as metis::Idx)
+            .collect();
         let metis_graph =
-            metis::Graph::new(1, self.n_parts.try_into().unwrap(), &mut xadj, &mut adjncy);
+            metis::Graph::new(1, self.n_parts.try_into().unwrap(), &mut xadj, &mut adjncy)
+                .set_vwgt(&mut vwgt);
 
         let mut partition = vec![0; self.graph.n()];
 
@@ -867,6 +885,9 @@ impl<T: MetisPartMethod> Partitioner for MetisPartitioner<T> {
 
     fn graph(&self) -> &CSRGraph {
         &self.graph
+    }
+    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+        self.weights.iter().copied()
     }
 }
 
