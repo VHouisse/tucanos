@@ -53,6 +53,10 @@ fn work_eval(initial_density: f64, actual_density: f64, intersected_density: f64
     let insert_c: f64 = 8.03; // Cout du split impliquant la création de 6 arêtes moyennes => 6 swaps verifs 
     let collapse_c: f64 = 3.33; // Cout du collapse impliquant la suppresion de 6 arêtes moy => 6 swaps verifs 
     let verif_cost = 1.0;
+    let insert_prob = intersected_density / initial_density;
+    let collapse_prob = intersected_density / actual_density;
+    println!("Insert density : {insert_prob}");
+    println!("Collapse density : {collapse_prob}");
     vol * (insert_c * (intersected_density - initial_density)
         + collapse_c * (intersected_density - actual_density))
         + verif_cost * 4.0 // Multiplicateur nb arêtes per elems 

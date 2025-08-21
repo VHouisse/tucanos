@@ -72,7 +72,7 @@ fn calculate_op_metric_elems(
         let z = p[2];
         let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
         if dist_sq <= RADIUS_SQ_ACTUAL {
-            chosen_metric = AnisoMetric3d::from_iso(&IsoMetric::<3>::from(h_inside_sphere_iso));
+            chosen_metric.scale_aniso(0.25); //AnisoMetric3d::from_iso(&IsoMetric::<3>::from(h_inside_sphere_iso));
         }
         result_metrics.push(chosen_metric);
     }
