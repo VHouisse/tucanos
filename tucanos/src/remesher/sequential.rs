@@ -698,10 +698,10 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
     /// Print length and quality stats on the mesh / metric
     pub fn print_stats(&self) {
         let stats = Stats::new(self.lengths_iter(), &[f64::sqrt(0.5), f64::sqrt(2.0)]);
-        debug!("Length: {stats}");
+        println!("Length: {stats}");
 
         let stats = Stats::new(self.qualities_iter(), &[0.4, 0.6, 0.8]);
-        debug!("Qualities: {stats}");
+        println!("Qualities: {stats}");
     }
 
     /// Return the stats at each remeshing step as a json string

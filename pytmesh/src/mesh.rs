@@ -17,7 +17,7 @@ use tmesh::{
     mesh::{
         BoundaryMesh2d, BoundaryMesh3d, Mesh, Mesh2d, Mesh3d, nonuniform_box_mesh,
         nonuniform_rectangle_mesh,
-        partition::{HilbertPartitioner, KMeansPartitioner2d, KMeansPartitioner3d, RCMPartitioner},
+        partition::{HilbertPartitioner, RCMPartitioner},
         read_stl,
     },
 };
@@ -333,14 +333,6 @@ macro_rules! create_mesh {
                         .partition::<RCMPartitioner>(n_parts, weights)
                         .map_err(|e| PyRuntimeError::new_err(e.to_string())),
                     PyPartitionerType::KMeans => match $dim {
-                        3 => self
-                            .0
-                            .partition::<KMeansPartitioner3d>(n_parts, weights)
-                            .map_err(|e| PyRuntimeError::new_err(e.to_string())),
-                        2 => self
-                            .0
-                            .partition::<KMeansPartitioner2d>(n_parts, weights)
-                            .map_err(|e| PyRuntimeError::new_err(e.to_string())),
                         _ => unimplemented!(),
                     },
                     #[cfg(feature = "metis")]

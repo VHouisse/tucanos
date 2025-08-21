@@ -6,9 +6,7 @@ use tmesh::{
     Result,
     mesh::{
         BoundaryMesh3d, Mesh, Mesh3d,
-        partition::{
-            HilbertBallPartitioner, HilbertPartitioner, KMeansPartitioner3d, RCMPartitioner,
-        },
+        partition::{HilbertBallPartitioner, HilbertPartitioner, RCMPartitioner},
     },
 };
 
@@ -110,16 +108,16 @@ fn main() -> Result<()> {
     );
     print_partition_cc(&msh, n_parts);
 
-    let start = Instant::now();
-    let (quality, imbalance) = msh.partition::<KMeansPartitioner3d>(n_parts, None)?;
-    let t = start.elapsed();
-    println!(
-        "KMeansPartitioner3d: {:.2e}s, quality={:.2e}, imbalance={:.2e}",
-        t.as_secs_f64(),
-        quality,
-        imbalance
-    );
-    print_partition_cc(&msh, n_parts);
+    // let start = Instant::now();
+    // let (quality, imbalance) = msh.partition::<KMeansPartitioner3d>(n_parts, None)?;
+    // let t = start.elapsed();
+    // println!(
+    //     "KMeansPartitioner3d: {:.2e}s, quality={:.2e}, imbalance={:.2e}",
+    //     t.as_secs_f64(),
+    //     quality,
+    //     imbalance
+    // );
+    // print_partition_cc(&msh, n_parts);
 
     #[cfg(feature = "metis")]
     {

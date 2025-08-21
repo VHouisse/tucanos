@@ -1,5 +1,6 @@
 //! Mesh partition example
 use env_logger::Env;
+use nalgebra::Vector3;
 use std::{path::Path, time::Instant};
 #[cfg(feature = "metis")]
 use tmesh::mesh::partition::{MetisKWay, MetisPartitioner, MetisRecursive};
@@ -100,6 +101,39 @@ fn calculate_split_metric_elems(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<Aniso
     mesh.elem_data_to_vertex_data_metric(&result_metrics)
         .unwrap()
 }
+const STRETCH_MAGNITUDE: f64 = 0.001;
+const PERP_MAGNITUDE: f64 = 0.1;
+fn calculate_stretching_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoMetric3d> {
+    let mut result_metrics = Vec::with_capacity(mesh.n_elems() as usize);
+
+    let stretch_direction = Vector3::new(0.0, 0.0, 1.0);
+    let perp_direction_x = Vector3::new(1.0, 0.0, 0.0);
+    let perp_direction_y = Vector3::new(0.0, 1.0, 0.0);
+
+    for g_elem in mesh.gelems() {
+        let mut chosen_metric = g_elem.implied_metric();
+
+        let p = g_elem.center();
+        let x = p[0];
+        let y = p[1];
+        // let z = p[2];
+        if (x - 1.0).abs() < 0.1 && (y - 0.5).abs() < 0.3 {
+            let dist_to_center_y = (p.y - 0.5).abs();
+            let influence = 1.0 - (dist_to_center_y / 0.3);
+
+            chosen_metric = AnisoMetric3d::from_sizes(
+                &(stretch_direction * STRETCH_MAGNITUDE * influence),
+                &(perp_direction_x * PERP_MAGNITUDE),
+                &(perp_direction_y * PERP_MAGNITUDE),
+            );
+        }
+        result_metrics.push(chosen_metric);
+    }
+
+    mesh.elem_data_to_vertex_data_metric(&result_metrics)
+        .unwrap()
+}
+
 fn print_partition_cc(msh: &SimplexMesh<3, Tetrahedron>, n_parts: usize) {
     for i in 0..n_parts {
         let pmesh = msh.get_partition(i).mesh;
@@ -129,6 +163,7 @@ pub fn main() -> Result<()> {
     msh.compute_vertex_to_elems();
     msh.compute_volumes();
     let m = calculate_split_metric_elems(&msh);
+    let _m = calculate_stretching_metric(&msh);
     msh.compute_volumes();
 
     let estimator = TotoCostEstimator::<3, Tetrahedron, AnisoMetric3d>::new(&m);

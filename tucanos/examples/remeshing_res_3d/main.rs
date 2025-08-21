@@ -1,5 +1,6 @@
 //! Mesh partition example
 use clap::Parser;
+use nalgebra::Vector3;
 
 use std::{path::Path, time::Instant};
 
@@ -19,8 +20,7 @@ use tmesh::{
 use tucanos::{
     geometry::{LinearGeometry, curvature::HasCurvature},
     mesh::{
-        Elem, GElem, HasTmeshImpl, Point, SimplexMesh, Tetrahedron, Triangle,
-        test_meshes::test_mesh_3d,
+        Elem, GElem, HasTmeshImpl, SimplexMesh, Tetrahedron, Triangle, test_meshes::test_mesh_3d,
     },
     metric::{AnisoMetric, AnisoMetric3d, HasImpliedMetric, IsoMetric, Metric},
     remesher::{
@@ -46,41 +46,23 @@ struct Args {
 
     #[arg(short, long, default_value_t = String::from("HilbertBallPartitionner"))]
     partitionner: String,
+
+    #[arg(short, long,  default_value_t = String::from("true"))]
+    option: String,
 }
 
 const CENTER_X: f64 = 0.4;
 const CENTER_Y: f64 = 0.4;
 const CENTER_Z: f64 = 0.4;
 const RADIUS: f64 = 1.0;
-const RADIUS_SQ_ACTUAL: f64 = RADIUS * 0.2;
-const H_INSIDE_SPHERE_ISO: f64 = 0.01;
-const H_OUTSIDE_SPHERE_ISO: f64 = 3.0;
-const H_INSIDE_SPHERE_ANISO: f64 = 0.01;
-const H_OUTSIDE_SPHERE_ANISO: f64 = 0.2;
+const RADIUS_SQ_ACTUAL: f64 = RADIUS * 0.3;
 
-// fn calculate_split_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoMetric3d> {
-//     let mut result_metrics = vec![AnisoMetric3d::default(); mesh.n_verts() as usize];
-//     let verts: Vec<usize> = (0..mesh.n_verts() as usize).collect();
-//     let e2e = mesh.get_vertex_to_elems().unwrap();
-//     for i_vert in verts {
-//         let elems = e2e.row(i_vert);
-//         let _gelem = mesh.gelem(mesh.elem(elems[0] as u32));
-//         let mut chosen_metric = AnisoMetric3d::from_iso(&IsoMetric::<3>::from(H_INSIDE_SPHERE_ISO));
-//         let p = mesh.vert(i_vert as u32);
-//         let x = p[0];
-//         let y = p[1];
-//         let z = p[2];
-//         let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
-//         if dist_sq <= RADIUS_SQ_ACTUAL {
-//             chosen_metric = AnisoMetric3d::from_iso(&IsoMetric::<3>::from(H_INSIDE_SPHERE_ISO));
-//         }
-
-//         // }AnisoMetric3d::from_iso(&IsoMetric::<3>::from(H_INSIDE_SPHERE_ISO));
-//         result_metrics[i_vert] = chosen_metric;
-//     }
-//     result_metrics
-// }
-fn calculate_split_metric_elems(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoMetric3d> {
+fn calculate_op_metric_elems(
+    mesh: &SimplexMesh<3, Tetrahedron>,
+    option: bool,
+) -> Vec<AnisoMetric3d> {
+    let h_inside_sphere_iso = if option { 5.0 } else { 0.01 };
+    println!("h : {h_inside_sphere_iso}");
     let mut result_metrics = Vec::with_capacity(mesh.n_elems() as usize);
     for g_elem in mesh.gelems() {
         let mut chosen_metric = g_elem.implied_metric();
@@ -90,7 +72,7 @@ fn calculate_split_metric_elems(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<Aniso
         let z = p[2];
         let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
         if dist_sq <= RADIUS_SQ_ACTUAL {
-            chosen_metric = AnisoMetric3d::from_iso(&IsoMetric::<3>::from(H_INSIDE_SPHERE_ISO));
+            chosen_metric = AnisoMetric3d::from_iso(&IsoMetric::<3>::from(h_inside_sphere_iso));
         }
         result_metrics.push(chosen_metric);
     }
@@ -98,32 +80,40 @@ fn calculate_split_metric_elems(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<Aniso
         .unwrap()
 }
 
-fn calculate_iso_metric(p: Point<3>) -> f64 {
-    let mut res = H_OUTSIDE_SPHERE_ISO;
-    let x = p[0];
-    let y = p[1];
-    let z = p[2];
-    let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
+const STRETCH_MAGNITUDE: f64 = 0.001;
+const PERP_MAGNITUDE: f64 = 0.1;
 
-    if dist_sq <= RADIUS_SQ_ACTUAL {
-        res = H_INSIDE_SPHERE_ISO;
+fn calculate_stretching_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoMetric3d> {
+    let mut result_metrics = Vec::with_capacity(mesh.n_elems() as usize);
+
+    let stretch_direction = Vector3::new(0.0, 0.0, 1.0);
+    let perp_direction_x = Vector3::new(1.0, 0.0, 0.0);
+    let perp_direction_y = Vector3::new(0.0, 1.0, 0.0);
+
+    for g_elem in mesh.gelems() {
+        let mut chosen_metric = g_elem.implied_metric();
+
+        let p = g_elem.center();
+        let x = p[0];
+        let y = p[1];
+        // let z = p[2];
+        if (x - 1.0).abs() < 0.1 && (y - 0.5).abs() < 0.3 {
+            let dist_to_center_y = (p.y - 0.5).abs();
+            let influence = 1.0 - (dist_to_center_y / 0.3);
+
+            chosen_metric = AnisoMetric3d::from_sizes(
+                &(stretch_direction * STRETCH_MAGNITUDE * influence),
+                &(perp_direction_x * PERP_MAGNITUDE),
+                &(perp_direction_y * PERP_MAGNITUDE),
+            );
+        }
+        result_metrics.push(chosen_metric);
     }
-    res
+
+    mesh.elem_data_to_vertex_data_metric(&result_metrics)
+        .unwrap()
 }
 
-/// Calculates the anisotropic metric value for a given point.
-fn calculate_aniso_metric(p: Point<3>) -> f64 {
-    let mut res = H_OUTSIDE_SPHERE_ANISO;
-    let x = p[0];
-    let y = p[1];
-    let z = p[2];
-    let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
-
-    if dist_sq <= RADIUS_SQ_ACTUAL {
-        res = H_INSIDE_SPHERE_ANISO;
-    }
-    res * (1.0 + 0.5 * (x - CENTER_X).abs())
-}
 // #[allow(clippy::unnecessary_wraps)]
 // #[allow(clippy::extra_unused_type_parameters)]
 // #[allow(clippy::needless_pass_by_value)]
@@ -179,7 +169,7 @@ fn calculate_aniso_metric(p: Point<3>) -> f64 {
 //     );
 //     Ok(new_mesh)
 // }
-
+#[allow(clippy::too_many_arguments)]
 fn perform_remeshing<
     const D: usize,
     E: Elem,
@@ -195,6 +185,7 @@ fn perform_remeshing<
     partitioner_name: &str,    // Added partitioner name for printout
     n_parts: u32,
     metric_type_arg: &str,
+    option: bool,
 ) -> Result<SimplexMesh<D, E>>
 where
     SimplexMesh<D, E>: HasTmeshImpl<D, E>,
@@ -209,10 +200,13 @@ where
     let time = Instant::now();
     let (meshed, info, _) = remesher.remesh(geom, params, &dd_params).unwrap();
     let total_elapsed_time = time.elapsed();
-    let remeshing_time = info.remeshing_time;
-    let remeshing_imbalance = info.remeshing_time_imbalance;
+    let remeshing_partition_time = info.remeshing_partition_time;
+    let remeshing_ifc_time = info.remeshing_ifc_time;
+    let remeshing_imbalance = info.remeshing_ptime_imbalance;
     println!(
-        "DATA,D={D},metric_type={metric_type_arg},cost_estimator={cost_estimator_name},partitioner={partitioner_name},num_elements={n_elements},remeshing_time = {remeshing_time}, remeshing_imbalance = {remeshing_imbalance}, total_elapsed_time={total_elapsed_time:?}"
+        "DATA,D={D},metric_type={metric_type_arg},cost_estimator={cost_estimator_name},partitioner={partitioner_name},num_elements={n_elements},
+        remeshing_partition_time = {remeshing_partition_time:.2e},remeshing_ifc_time={remeshing_ifc_time:.2e}, remeshing_ptime_imbalance = {remeshing_imbalance},
+        total_elapsed_time={total_elapsed_time:?},option={option}"
     );
     Ok(meshed)
 }
@@ -238,22 +232,25 @@ fn main() -> Result<()> {
     let file_name = "Initial_Mesh.vtu".to_string();
     let output_path = output_dir.join(&file_name);
     let _ = msh.write_vtk(output_path.to_str().unwrap());
+    let mut option = true;
     match args.metric_type.as_str() {
         "iso" => {
-            let m: Vec<IsoMetric<3>> = msh
-                .verts()
-                .map(|v| IsoMetric::<3>::from(calculate_iso_metric(v)))
-                .collect();
-
+            msh.compute_vertex_to_elems();
+            let m: Vec<AnisoMetric3d> = if args.option.as_str() == "true" {
+                calculate_op_metric_elems(&msh, true) //Collapse Metric 
+            } else {
+                option = false;
+                calculate_op_metric_elems(&msh, false) // Split Metric 
+            };
             if args.cost_estimator.as_str() == "Nocost" {
                 match args.partitionner.as_str() {
                     "HilbertPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             HilbertPartitioner,
-                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
                             msh,
                             &geom,
@@ -262,15 +259,16 @@ fn main() -> Result<()> {
                             "HilbertPartitionner",
                             args.n_parts,
                             "iso",
+                            option,
                         )?;
                     }
                     "HilbertBallPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             HilbertBallPartitioner,
-                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
                             msh,
                             &geom,
@@ -279,15 +277,16 @@ fn main() -> Result<()> {
                             "HilbertBallPartitionner",
                             args.n_parts,
                             "iso",
+                            option,
                         )?;
                     }
                     "BFSPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             BFSPartitionner,
-                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
                             msh,
                             &geom,
@@ -296,15 +295,16 @@ fn main() -> Result<()> {
                             "BFSPartitionner",
                             args.n_parts,
                             "iso",
+                            option,
                         )?;
                     }
                     "BFSWRPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             BFSWRPartitionner,
-                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
                             msh,
                             &geom,
@@ -313,6 +313,7 @@ fn main() -> Result<()> {
                             "BFSWRPartitionner",
                             args.n_parts,
                             "iso",
+                            option,
                         )?;
                     }
                     #[cfg(feature = "metis")]
@@ -320,11 +321,18 @@ fn main() -> Result<()> {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             MetisPartitioner<MetisKWay>,
-                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
-                            msh, &geom, m, "Nocost", "MetisKWay", args.n_parts, "iso"
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "MetisKWay",
+                            args.n_parts,
+                            "iso",
+                            option,
                         )?;
                     }
                     #[cfg(feature = "metis")]
@@ -332,9 +340,9 @@ fn main() -> Result<()> {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             MetisPartitioner<MetisRecursive>,
-                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
                             msh,
                             &geom,
@@ -343,6 +351,7 @@ fn main() -> Result<()> {
                             "MetisRecursive",
                             args.n_parts,
                             "iso",
+                            option,
                         )?;
                     }
                     _ => {
@@ -353,15 +362,14 @@ fn main() -> Result<()> {
                     }
                 }
             } else {
-                // Default to TotoCostEstimator if not "Nocost"
                 match args.partitionner.as_str() {
                     "HilbertPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             HilbertPartitioner,
-                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
                             msh,
                             &geom,
@@ -370,15 +378,16 @@ fn main() -> Result<()> {
                             "HilbertPartitionner",
                             args.n_parts,
                             "iso",
+                            option,
                         )?;
                     }
                     "HilbertBallPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             HilbertBallPartitioner,
-                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
                             msh,
                             &geom,
@@ -387,15 +396,16 @@ fn main() -> Result<()> {
                             "HilbertBallPartitionner",
                             args.n_parts,
                             "iso",
+                            option,
                         )?;
                     }
                     "BFSPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             BFSPartitionner,
-                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
                             msh,
                             &geom,
@@ -404,15 +414,16 @@ fn main() -> Result<()> {
                             "BFSPartitionner",
                             args.n_parts,
                             "iso",
+                            option,
                         )?;
                     }
                     "BFSWRPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             BFSWRPartitionner,
-                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
                             msh,
                             &geom,
@@ -421,31 +432,54 @@ fn main() -> Result<()> {
                             "BFSWRPartitionner",
                             args.n_parts,
                             "iso",
+                            option,
                         )?;
                     }
                     #[cfg(feature = "metis")]
                     "MetisKWay" => {
-                        perform_remeshing::<
+                        let msh = perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             MetisPartitioner<MetisKWay>,
-                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
-                            msh, &geom, m, "Toto", "MetisKWay", args.n_parts, "iso"
-                        )?;
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "MetisKWay",
+                            args.n_parts,
+                            "iso",
+                            option,
+                        )
+                        .unwrap();
+                        let file_name = "MetisKWay_Remeshed.vtu".to_string();
+                        let output_path = output_dir.join(&file_name);
+                        let _ = msh.write_vtk(output_path.to_str().unwrap());
                     }
                     #[cfg(feature = "metis")]
                     "MetisRecursive" => {
-                        perform_remeshing::<
+                        let msh = perform_remeshing::<
                             3,
                             Tetrahedron,
-                            IsoMetric<3>,
+                            AnisoMetric3d,
                             MetisPartitioner<MetisRecursive>,
-                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
+                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
-                            msh, &geom, m, "Toto", "MetisRecursive", args.n_parts, "iso"
-                        )?;
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "MetisRecursive",
+                            args.n_parts,
+                            "iso",
+                            option,
+                        )
+                        .unwrap();
+                        let file_name = "MetisR_Remeshed.vtu".to_string();
+                        let output_path = output_dir.join(&file_name);
+                        let _ = msh.write_vtk(output_path.to_str().unwrap());
                     }
                     _ => {
                         return Err(Box::new(std::io::Error::new(
@@ -457,12 +491,9 @@ fn main() -> Result<()> {
             }
         }
         "aniso" => {
-            let _m: Vec<AnisoMetric3d> = msh
-                .verts()
-                .map(|v| AnisoMetric3d::from_iso(&IsoMetric::<3>::from(calculate_aniso_metric(v))))
-                .collect();
             msh.compute_vertex_to_elems();
-            let m = calculate_split_metric_elems(&msh);
+            option = false;
+            let m = calculate_stretching_metric(&msh);
 
             if args.cost_estimator.as_str() == "Nocost" {
                 match args.partitionner.as_str() {
@@ -481,6 +512,7 @@ fn main() -> Result<()> {
                             "HilbertBallPartitionner",
                             args.n_parts,
                             "aniso",
+                            option,
                         )
                         .unwrap();
                         let file_name = "A_HB_Remeshed.vtu".to_string();
@@ -502,6 +534,7 @@ fn main() -> Result<()> {
                             "HilbertPartitionner",
                             args.n_parts,
                             "aniso",
+                            option,
                         )
                         .unwrap();
                         let file_name = "A_H_Remeshed.vtu".to_string();
@@ -523,6 +556,7 @@ fn main() -> Result<()> {
                             "BFSPartitionner",
                             args.n_parts,
                             "aniso",
+                            option,
                         )?;
                     }
                     "BFSWRPartitionner" => {
@@ -540,6 +574,7 @@ fn main() -> Result<()> {
                             "BFSWRPartitionner",
                             args.n_parts,
                             "aniso",
+                            option,
                         )?;
                     }
                     #[cfg(feature = "metis")]
@@ -551,12 +586,19 @@ fn main() -> Result<()> {
                             MetisPartitioner<MetisKWay>,
                             NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
-                            msh, &geom, m, "Nocost", "MetisKWay", args.n_parts, "aniso"
+                            msh,
+                            &geom,
+                            m,
+                            "Nocost",
+                            "MetisKWay",
+                            args.n_parts,
+                            "aniso",
+                            option,
                         )?;
                     }
                     #[cfg(feature = "metis")]
                     "MetisRecursive" => {
-                        perform_remeshing::<
+                        let msh = perform_remeshing::<
                             3,
                             Tetrahedron,
                             AnisoMetric3d,
@@ -570,7 +612,12 @@ fn main() -> Result<()> {
                             "MetisRecursive",
                             args.n_parts,
                             "aniso",
-                        )?;
+                            option,
+                        )
+                        .unwrap();
+                        let file_name = "MetisR_Remeshed.vtu".to_string();
+                        let output_path = output_dir.join(&file_name);
+                        let _ = msh.write_vtk(output_path.to_str().unwrap());
                     }
                     _ => {
                         return Err(Box::new(std::io::Error::new(
@@ -580,7 +627,6 @@ fn main() -> Result<()> {
                     }
                 }
             } else {
-                // Default to TotoCostEstimator if not "Nocost"
                 match args.partitionner.as_str() {
                     "HilbertPartitionner" => {
                         let msh: SimplexMesh<3, Tetrahedron> = perform_remeshing::<
@@ -597,6 +643,7 @@ fn main() -> Result<()> {
                             "HilbertPartitionner",
                             args.n_parts,
                             "aniso",
+                            option,
                         )
                         .unwrap();
                         let file_name = "A_H_Remeshed.vtu".to_string();
@@ -618,6 +665,7 @@ fn main() -> Result<()> {
                             "HilbertBallPartitionner",
                             args.n_parts,
                             "aniso",
+                            option,
                         )
                         .unwrap();
                         let file_name = "A_H_Remeshed.vtu".to_string();
@@ -639,6 +687,7 @@ fn main() -> Result<()> {
                             "BFSPartitionner",
                             args.n_parts,
                             "aniso",
+                            option,
                         )?;
                     }
                     "BFSWRPartitionner" => {
@@ -656,23 +705,35 @@ fn main() -> Result<()> {
                             "BFSWRPartitionner",
                             args.n_parts,
                             "aniso",
+                            option,
                         )?;
                     }
                     #[cfg(feature = "metis")]
                     "MetisKWay" => {
-                        perform_remeshing::<
+                        let msh = perform_remeshing::<
                             3,
                             Tetrahedron,
                             AnisoMetric3d,
                             MetisPartitioner<MetisKWay>,
                             TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
                         >(
-                            msh, &geom, m, "Toto", "MetisKWay", args.n_parts, "aniso"
-                        )?;
+                            msh,
+                            &geom,
+                            m,
+                            "Toto",
+                            "MetisKWay",
+                            args.n_parts,
+                            "aniso",
+                            option,
+                        )
+                        .unwrap();
+                        let file_name = "MetisKWay_Remeshed.vtu".to_string();
+                        let output_path = output_dir.join(&file_name);
+                        let _ = msh.write_vtk(output_path.to_str().unwrap());
                     }
                     #[cfg(feature = "metis")]
                     "MetisRecursive" => {
-                        perform_remeshing::<
+                        let msh = perform_remeshing::<
                             3,
                             Tetrahedron,
                             AnisoMetric3d,
@@ -686,7 +747,12 @@ fn main() -> Result<()> {
                             "MetisRecursive",
                             args.n_parts,
                             "aniso",
-                        )?;
+                            option,
+                        )
+                        .unwrap();
+                        let file_name = "MetisR_Remeshed.vtu".to_string();
+                        let output_path = output_dir.join(&file_name);
+                        let _ = msh.write_vtk(output_path.to_str().unwrap());
                     }
                     _ => {
                         return Err(Box::new(std::io::Error::new(

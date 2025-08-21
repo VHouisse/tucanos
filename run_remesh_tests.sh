@@ -9,15 +9,15 @@ LOG_DIR_2D="${LOG_ROOT_DIR}/remesh_stats_2D"
 LOG_DIR_3D="${LOG_ROOT_DIR}/remesh_stats_3D"
 
 if [ -d "$LOG_DIR_2D" ]; then
-    echo "Nettoyage du répertoire existant: $LOG_DIR_2D"
-    rm -rf "${LOG_DIR_2D}"/* # Supprime tout le contenu
+    echo "Nettoyage des fichiers 'costToto' dans le répertoire: $LOG_DIR_2D"
+    find "${LOG_DIR_2D}" -type f -name "*costToto*" -delete
 else
     echo "Création du répertoire: $LOG_DIR_2D"
     mkdir -p "$LOG_DIR_2D"
 fi
 if [ -d "$LOG_DIR_3D" ]; then
-    echo "Nettoyage du répertoire existant: $LOG_DIR_3D"
-    rm -rf "${LOG_DIR_3D}"/* # Supprime tout le contenu
+    echo "Nettoyage des fichiers 'costToto' dans le répertoire: $LOG_DIR_3D"
+    find "${LOG_DIR_3D}" -type f -name "*costToto*" -delete
 else
     echo "Création du répertoire: $LOG_DIR_3D"
     mkdir -p "$LOG_DIR_3D"
@@ -32,10 +32,11 @@ NUM_REPETITIONS=5
 
 # Define the different parameters to test
 SPLITS_2D=()
-SPLITS_3D=(4)
-METRIC_TYPES=("aniso")
+SPLITS_3D=(4 5 6)
+METRIC_TYPES=("iso" "aniso")
 COST_ESTIMATORS=("Nocost" "Toto")
-PARTITIONERS=("HilbertBallPartitionner" "BFSPartitionner" "BFSWRPartitionner" "HilbertPartitionner")
+PARTITIONERS=("MetisKWay" "MetisRecursive")
+OPTIONS=("true" "false")
 
 echo "Starting ALL remeshing tests (2D and 3D) with all configurations..."
 echo "Each simulation will be run $NUM_REPETITIONS times."
@@ -50,31 +51,33 @@ for splits in "${SPLITS_2D[@]}"; do
     for metric_type in "${METRIC_TYPES[@]}"; do
         for cost_estimator in "${COST_ESTIMATORS[@]}"; do
             for partitioner in "${PARTITIONERS[@]}"; do
-                for i in $(seq 1 $NUM_REPETITIONS); do # <--- NOUVEAU : Boucle de répétition
-                    echo "Running 2D test (Repetition $i/$NUM_REPETITIONS) with:"
-                    echo "  num_splits     = $splits"
-                    echo "  metric_type    = $metric_type"
-                    echo "  cost_estimator = $cost_estimator"
-                    echo "  partitioner    = $partitioner"
+                for option in "${OPTIONS[@]}"; do
+                    for i in $(seq 1 $NUM_REPETITIONS); do
+                        echo "Running 2D test (Repetition $i/$NUM_REPETITIONS) with:"
+                        echo "  num_splits     = $splits"
+                        echo "  metric_type    = $metric_type"
+                        echo "  cost_estimator = $cost_estimator"
+                        echo "  partitioner    = $partitioner"
+                        echo "  option         = $option"
 
-                    # Ajouter l'index de répétition au nom du fichier de log
-                    LOG_FILE="${LOG_DIR_2D}/splits${splits}_metric${metric_type}_cost${cost_estimator}_part${partitioner}_rep${i}.txt"
+                        LOG_FILE="${LOG_DIR_2D}/splits${splits}_metric${metric_type}_cost${cost_estimator}_part${partitioner}_opt${option}_rep${i}.txt"
 
-                    # Run the Rust program for 2D
-                    cargo run --release --example "$EXAMPLE_2D_NAME" -- \
-                        --num-splits "$splits" \
-                        --metric-type "$metric_type" \
-                        --cost-estimator "$cost_estimator" \
-                        --partitionner "$partitioner" \
-                        > "$LOG_FILE" 2>&1
+                        cargo run --release --features="metis" --example "$EXAMPLE_2D_NAME" -- \
+                            --num-splits "$splits" \
+                            --metric-type "$metric_type" \
+                            --cost-estimator "$cost_estimator" \
+                            --partitionner "$partitioner" \
+                            --option "$option" \
+                            > "$LOG_FILE" 2>&1
 
-                    if [ $? -eq 0 ]; then
-                        echo "2D test (Repetition $i) completed successfully. Log saved to: $LOG_FILE"
-                    else
-                        echo "2D test (Repetition $i) FAILED. Check log file for details: $LOG_FILE"
-                    fi
-                    echo "----------------------------------------------------"
-                done # End of NUM_REPETITIONS loop
+                        if [ $? -eq 0 ]; then
+                            echo "2D test (Repetition $i) completed successfully. Log saved to: $LOG_FILE"
+                        else
+                            echo "2D test (Repetition $i) FAILED. Check log file for details: $LOG_FILE"
+                        fi
+                        echo "----------------------------------------------------"
+                    done
+                done
             done
         done
     done
@@ -90,31 +93,33 @@ for splits in "${SPLITS_3D[@]}"; do
     for metric_type in "${METRIC_TYPES[@]}"; do
         for cost_estimator in "${COST_ESTIMATORS[@]}"; do
             for partitioner in "${PARTITIONERS[@]}"; do
-                for i in $(seq 1 $NUM_REPETITIONS); do # <--- NOUVEAU : Boucle de répétition
-                    echo "Running 3D test (Repetition $i/$NUM_REPETITIONS) with:"
-                    echo "  num_splits     = $splits"
-                    echo "  metric_type    = $metric_type"
-                    echo "  cost_estimator = $cost_estimator"
-                    echo "  partitioner    = $partitioner"
+                for option in "${OPTIONS[@]}"; do
+                    for i in $(seq 1 $NUM_REPETITIONS); do
+                        echo "Running 3D test (Repetition $i/$NUM_REPETITIONS) with:"
+                        echo "  num_splits     = $splits"
+                        echo "  metric_type    = $metric_type"
+                        echo "  cost_estimator = $cost_estimator"
+                        echo "  partitioner    = $partitioner"
+                        echo "  option         = $option"
 
-                    # Ajouter l'index de répétition au nom du fichier de log
-                    LOG_FILE="${LOG_DIR_3D}/splits${splits}_metric${metric_type}_cost${cost_estimator}_part${partitioner}_rep${i}.txt"
+                        LOG_FILE="${LOG_DIR_3D}/splits${splits}_metric${metric_type}_cost${cost_estimator}_part${partitioner}_opt${option}_rep${i}.txt"
 
-                    # Run the Rust program for 3D
-                    cargo run --release --example "$EXAMPLE_3D_NAME" -- \
-                        --num-splits "$splits" \
-                        --metric-type "$metric_type" \
-                        --cost-estimator "$cost_estimator" \
-                        --partitionner "$partitioner" \
-                        > "$LOG_FILE" 2>&1
+                        cargo run --release --features="metis" --example "$EXAMPLE_3D_NAME" -- \
+                            --num-splits "$splits" \
+                            --metric-type "$metric_type" \
+                            --cost-estimator "$cost_estimator" \
+                            --partitionner "$partitioner" \
+                            --option "$option" \
+                            > "$LOG_FILE" 2>&1
 
-                    if [ $? -eq 0 ]; then
-                        echo "3D test (Repetition $i) completed successfully. Log saved to: $LOG_FILE"
-                    else
-                        echo "3D test (Repetition $i) FAILED. Check log file for details: $LOG_FILE"
-                    fi
-                    echo "----------------------------------------------------"
-                done # End of NUM_REPETITIONS loop
+                        if [ $? -eq 0 ]; then
+                            echo "3D test (Repetition $i) completed successfully. Log saved to: $LOG_FILE"
+                        else
+                            echo "3D test (Repetition $i) FAILED. Check log file for details: $LOG_FILE"
+                        fi
+                        echo "----------------------------------------------------"
+                    done
+                done
             done
         done
     done

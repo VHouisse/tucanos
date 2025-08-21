@@ -1,7 +1,6 @@
 //! Mesh partitioners
 use super::{Cell, Face, Mesh, Simplex, cell_center, hilbert::hilbert_indices};
-use crate::{Error, Result, Vert2d, Vert3d, argmax, graph::CSRGraph};
-use coupe::Partition;
+use crate::{Result, argmax, graph::CSRGraph};
 
 use std::collections::VecDeque;
 #[cfg(feature = "metis")]
@@ -32,6 +31,9 @@ pub trait Partitioner: Sized + Send + Sync {
         let mut res = vec![0.0; self.n_parts()];
         for (&i_part, w) in parts.iter().zip(self.weights()) {
             res[i_part] += w;
+        }
+        for (i, tweight) in res.iter().enumerate() {
+            println!("Partition {i} Poids : {tweight}");
         }
         res
     }
@@ -626,140 +628,140 @@ impl Partitioner for RCMPartitioner {
 }
 
 /// KMeans partitionner based on `coupe` (2d)
-pub struct KMeansPartitioner2d {
-    n_parts: usize,
-    graph: CSRGraph,
-    centers: Vec<Vert2d>,
-    weights: Vec<f64>,
-}
-impl Partitioner for KMeansPartitioner2d {
-    fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
-        msh: &M,
-        n_parts: usize,
-        weights: Option<Vec<f64>>,
-    ) -> Result<Self>
-    where
-        Cell<C>: Simplex<C>,
-        Face<F>: Simplex<F>,
-    {
-        match D {
-            2 => {
-                let faces = msh.all_faces();
-                let graph = msh.element_pairs(&faces);
+// pub struct KMeansPartitioner2d {
+//     n_parts: usize,
+//     graph: CSRGraph,
+//     centers: Vec<Vert2d>,
+//     weights: Vec<f64>,
+// }
+// impl Partitioner for KMeansPartitioner2d {
+//     fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
+//         msh: &M,
+//         n_parts: usize,
+//         weights: Option<Vec<f64>>,
+//     ) -> Result<Self>
+//     where
+//         Cell<C>: Simplex<C>,
+//         Face<F>: Simplex<F>,
+//     {
+//         match D {
+//             2 => {
+//                 let faces = msh.all_faces();
+//                 let graph = msh.element_pairs(&faces);
 
-                let centers = msh
-                    .gelems()
-                    .map(|ge| Vert2d::from_row_slice(cell_center(&ge).as_slice()))
-                    .collect();
-                let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
-                Ok(Self {
-                    n_parts,
-                    graph,
-                    centers,
-                    weights,
-                })
-            }
-            _ => Err(Error::from("Partitioner only available for D=2")),
-        }
-    }
-    fn compute(&self) -> Result<Vec<usize>> {
-        let mut partition = vec![0; self.centers.len()];
+//                 let centers = msh
+//                     .gelems()
+//                     .map(|ge| Vert2d::from_row_slice(cell_center(&ge).as_slice()))
+//                     .collect();
+//                 let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
+//                 Ok(Self {
+//                     n_parts,
+//                     graph,
+//                     centers,
+//                     weights,
+//                 })
+//             }
+//             _ => Err(Error::from("Partitioner only available for D=2")),
+//         }
+//     }
+//     fn compute(&self) -> Result<Vec<usize>> {
+//         let mut partition = vec![0; self.centers.len()];
 
-        coupe::HilbertCurve {
-            part_count: self.n_parts(),
-            ..Default::default()
-        }
-        .partition(&mut partition, (self.centers.as_slice(), &self.weights))?;
+//         coupe::HilbertCurve {
+//             part_count: self.n_parts(),
+//             ..Default::default()
+//         }
+//         .partition(&mut partition, (self.centers.as_slice(), &self.weights))?;
 
-        coupe::KMeans {
-            delta_threshold: 0.0,
-            ..Default::default()
-        }
-        .partition(&mut partition, (self.centers.as_slice(), &self.weights))?;
+//         coupe::KMeans {
+//             delta_threshold: 0.0,
+//             ..Default::default()
+//         }
+//         .partition(&mut partition, (self.centers.as_slice(), &self.weights))?;
 
-        Ok(partition)
-    }
+//         Ok(partition)
+//     }
 
-    fn n_parts(&self) -> usize {
-        self.n_parts
-    }
+//     fn n_parts(&self) -> usize {
+//         self.n_parts
+//     }
 
-    fn graph(&self) -> &CSRGraph {
-        &self.graph
-    }
+//     fn graph(&self) -> &CSRGraph {
+//         &self.graph
+//     }
 
-    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
-        self.weights.iter().copied()
-    }
-}
+//     fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+//         self.weights.iter().copied()
+//     }
+// }
 
 /// KMeans partitionner based on `coupe` (3d)
-pub struct KMeansPartitioner3d {
-    n_parts: usize,
-    graph: CSRGraph,
-    centers: Vec<Vert3d>,
-    weights: Vec<f64>,
-}
+// pub struct KMeansPartitioner3d {
+//     n_parts: usize,
+//     graph: CSRGraph,
+//     centers: Vec<Vert3d>,
+//     weights: Vec<f64>,
+// }
 
-impl Partitioner for KMeansPartitioner3d {
-    fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
-        msh: &M,
-        n_parts: usize,
-        weights: Option<Vec<f64>>,
-    ) -> Result<Self>
-    where
-        Cell<C>: Simplex<C>,
-        Face<F>: Simplex<F>,
-    {
-        match D {
-            3 => {
-                let faces = msh.all_faces();
-                let graph = msh.element_pairs(&faces);
+// impl Partitioner for KMeansPartitioner3d {
+//     fn new<const D: usize, const C: usize, const F: usize, M: Mesh<D, C, F>>(
+//         msh: &M,
+//         n_parts: usize,
+//         weights: Option<Vec<f64>>,
+//     ) -> Result<Self>
+//     where
+//         Cell<C>: Simplex<C>,
+//         Face<F>: Simplex<F>,
+//     {
+//         match D {
+//             3 => {
+//                 let faces = msh.all_faces();
+//                 let graph = msh.element_pairs(&faces);
 
-                let centers = msh
-                    .gelems()
-                    .map(|ge| Vert3d::from_row_slice(cell_center(&ge).as_slice()))
-                    .collect();
-                let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
-                Ok(Self {
-                    n_parts,
-                    graph,
-                    centers,
-                    weights,
-                })
-            }
-            _ => Err(Error::from("Partitioner only available for D=2")),
-        }
-    }
-    fn compute(&self) -> Result<Vec<usize>> {
-        let mut partition = vec![0; self.centers.len()];
+//                 let centers = msh
+//                     .gelems()
+//                     .map(|ge| Vert3d::from_row_slice(cell_center(&ge).as_slice()))
+//                     .collect();
+//                 let weights = weights.unwrap_or_else(|| vec![1.0; msh.n_elems()]);
+//                 Ok(Self {
+//                     n_parts,
+//                     graph,
+//                     centers,
+//                     weights,
+//                 })
+//             }
+//             _ => Err(Error::from("Partitioner only available for D=2")),
+//         }
+//     }
+//     fn compute(&self) -> Result<Vec<usize>> {
+//         let mut partition = vec![0; self.centers.len()];
 
-        coupe::HilbertCurve {
-            part_count: self.n_parts(),
-            ..Default::default()
-        }
-        .partition(&mut partition, (self.centers.as_slice(), &self.weights))?;
+//         coupe::HilbertCurve {
+//             part_count: self.n_parts(),
+//             ..Default::default()
+//         }
+//         .partition(&mut partition, (self.centers.as_slice(), &self.weights))?;
 
-        coupe::KMeans {
-            delta_threshold: 0.0,
-            ..Default::default()
-        }
-        .partition(&mut partition, (self.centers.as_slice(), &self.weights))?;
-        Ok(partition)
-    }
+//         coupe::KMeans {
+//             delta_threshold: 0.0,
+//             ..Default::default()
+//         }
+//         .partition(&mut partition, (self.centers.as_slice(), &self.weights))?;
+//         Ok(partition)
+//     }
 
-    fn n_parts(&self) -> usize {
-        self.n_parts
-    }
+//     fn n_parts(&self) -> usize {
+//         self.n_parts
+//     }
 
-    fn graph(&self) -> &CSRGraph {
-        &self.graph
-    }
+//     fn graph(&self) -> &CSRGraph {
+//         &self.graph
+//     }
 
-    fn weights(&self) -> impl Iterator<Item = f64> + '_ {
-        self.weights.iter().copied()
-    }
-}
+//     fn weights(&self) -> impl Iterator<Item = f64> + '_ {
+//         self.weights.iter().copied()
+//     }
+// }
 
 #[cfg(feature = "metis")]
 /// Metis partitioning method
@@ -861,7 +863,6 @@ impl<T: MetisPartMethod + std::marker::Sync + std::marker::Send> Partitioner
             .iter()
             .map(|&w| (w * scaling_factor).round() as metis::Idx)
             .collect();
-        println!("weights : {vwgt:?}");
         let metis_graph =
             metis::Graph::new(1, self.n_parts.try_into().unwrap(), &mut xadj, &mut adjncy)
                 .set_vwgt(&mut vwgt);
@@ -897,12 +898,11 @@ mod tests {
     #[cfg(feature = "metis")]
     use crate::mesh::partition::{MetisPartitioner, MetisRecursive};
     use crate::mesh::{
-        Mesh, Mesh2d, Mesh3d, box_mesh,
+        Mesh, Mesh3d, box_mesh,
         partition::{
-            BFSPartitionner, HilbertBallPartitioner, HilbertPartitioner, KMeansPartitioner2d,
-            KMeansPartitioner3d, Partitioner, RCMPartitioner,
+            BFSPartitionner, HilbertBallPartitioner, HilbertPartitioner, Partitioner,
+            RCMPartitioner,
         },
-        rectangle_mesh,
     };
 
     #[test]
@@ -957,29 +957,29 @@ mod tests {
         assert!(partitioner.partition_imbalance(&parts) < 0.002);
     }
 
-    #[test]
-    fn test_coupe_kmeans2d() {
-        let msh: Mesh2d = rectangle_mesh(1.0, 5, 1.0, 6);
-        let msh = msh.random_shuffle();
+    // #[test]
+    // fn test_coupe_kmeans2d() {
+    //     let msh: Mesh2d = rectangle_mesh(1.0, 5, 1.0, 6);
+    //     let msh = msh.random_shuffle();
 
-        let partitioner = KMeansPartitioner2d::new(&msh, 4, None).unwrap();
-        let parts = partitioner.compute().unwrap();
+    //     let partitioner = KMeansPartitioner2d::new(&msh, 4, None).unwrap();
+    //     let parts = partitioner.compute().unwrap();
 
-        assert!(partitioner.partition_quality(&parts) < 0.2);
-        assert!(partitioner.partition_imbalance(&parts) < 0.41);
-    }
+    //     assert!(partitioner.partition_quality(&parts) < 0.2);
+    //     assert!(partitioner.partition_imbalance(&parts) < 0.41);
+    // }
 
-    #[test]
-    fn test_coupe_kmeans() {
-        let msh: Mesh3d = box_mesh(1.0, 6, 1.0, 5, 1.0, 5);
-        let msh = msh.random_shuffle();
+    // #[test]
+    // fn test_coupe_kmeans() {
+    //     let msh: Mesh3d = box_mesh(1.0, 6, 1.0, 5, 1.0, 5);
+    //     let msh = msh.random_shuffle();
 
-        let partitioner = KMeansPartitioner3d::new(&msh, 4, None).unwrap();
-        let parts = partitioner.compute().unwrap();
+    //     let partitioner = KMeansPartitioner3d::new(&msh, 4, None).unwrap();
+    //     let parts = partitioner.compute().unwrap();
 
-        assert!(partitioner.partition_quality(&parts) < 0.11);
-        assert!(partitioner.partition_imbalance(&parts) < 0.04);
-    }
+    //     assert!(partitioner.partition_quality(&parts) < 0.11);
+    //     assert!(partitioner.partition_imbalance(&parts) < 0.04);
+    // }
 
     #[cfg(feature = "metis")]
     #[test]
