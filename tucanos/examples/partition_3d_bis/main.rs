@@ -162,8 +162,8 @@ pub fn main() -> Result<()> {
     let n_parts = 8;
     msh.compute_vertex_to_elems();
     msh.compute_volumes();
-    let m = calculate_split_metric_elems(&msh);
-    let _m = calculate_stretching_metric(&msh);
+    let _m = calculate_split_metric_elems(&msh);
+    let m = calculate_stretching_metric(&msh);
     msh.compute_volumes();
 
     let estimator = TotoCostEstimator::<3, Tetrahedron, AnisoMetric3d>::new(&m);

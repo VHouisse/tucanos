@@ -72,7 +72,11 @@ fn calculate_op_metric_elems(
         let z = p[2];
         let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
         if dist_sq <= RADIUS_SQ_ACTUAL {
-            chosen_metric.scale_aniso(0.25); //AnisoMetric3d::from_iso(&IsoMetric::<3>::from(h_inside_sphere_iso));
+            if option {
+                chosen_metric.scale_aniso(0.25);
+            } else {
+                chosen_metric.scale_aniso(4.0); //AnisoMetric3d::from_iso(&IsoMetric::<3>::from(h_inside_sphere_iso));
+            }
         }
         result_metrics.push(chosen_metric);
     }
@@ -169,6 +173,16 @@ fn calculate_stretching_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoM
 //     );
 //     Ok(new_mesh)
 // }
+
+fn quality_remeshed<const D: usize, E: Elem>(remeshed: &SimplexMesh<D, E>) -> f64 {
+    let mut qualities = Vec::with_capacity(remeshed.n_elems() as usize);
+    for g_elem in remeshed.gelems() {
+        let quality = g_elem.quality();
+        qualities.push(quality);
+    }
+    qualities.iter().sum::<f64>() / f64::from(remeshed.n_elems())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn perform_remeshing<
     const D: usize,
@@ -199,6 +213,8 @@ where
     let params = RemesherParams::default();
     let time = Instant::now();
     let (meshed, info, _) = remesher.remesh(geom, params, &dd_params).unwrap();
+    let mean_quality = quality_remeshed(&meshed);
+    println!("Mean quality of the remeshed mesh {mean_quality}");
     let total_elapsed_time = time.elapsed();
     let remeshing_partition_time = info.remeshing_partition_time;
     let remeshing_ifc_time = info.remeshing_ifc_time;

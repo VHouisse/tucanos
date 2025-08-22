@@ -61,7 +61,7 @@ impl ParallelRemesherParams {
 
 impl Default for ParallelRemesherParams {
     fn default() -> Self {
-        Self::new(2, 1, 10000)
+        Self::new(2, 3, 10000)
     }
 }
 
@@ -927,7 +927,7 @@ where
                 ifc_m.extend(ids.iter().map(|&i| local_m[i]));
             });
         let mut info = info.into_inner().unwrap();
-        info.print_summary();
+        //info.print_summary();
 
         let p_remeshing_time = now.elapsed();
 

@@ -49,15 +49,15 @@ def parse_log_file(filepath):
         for line in f:
             stripped_line = line.strip()
             
-            if stripped_line.startswith("partition "):
-                try:
-                    parts = stripped_line.split(',')
-                    time_str = parts[1].strip()
-                    time_good = time_str.split(' ')
-                    time_val = parse_time_string_robust(time_good[0])
-                    partition_times.append(time_val)
-                except (IndexError, ValueError):
-                    continue
+            # if stripped_line.startswith("partition "):
+            #     try:
+            #         parts = stripped_line.split(',')
+            #         time_str = parts[1].strip()
+            #         time_good = time_str.split(' ')
+            #         time_val = parse_time_string_robust(time_good[0])
+            #         partition_times.append(time_val)
+            #     except (IndexError, ValueError):
+            #         continue
 
             # Si la ligne commence par "DATA,", c'est le début d'un nouveau bloc de données.
             if stripped_line.startswith("DATA,"):
@@ -69,7 +69,7 @@ def parse_log_file(filepath):
                             key, value = part.split('=', 1)
                             record[key.strip()] = value.strip()
                     
-                    record['partition_times'] = partition_times
+                    # record['partition_times'] = partition_times
                     data_records.append(record)
                     
                 current_data_line = stripped_line
@@ -84,7 +84,7 @@ def parse_log_file(filepath):
                     key, value = part.split('=', 1)
                     record[key.strip()] = value.strip()
             
-            record['partition_times'] = partition_times
+            # record['partition_times'] = partition_times
             data_records.append(record)
             
     return data_records

@@ -126,8 +126,8 @@ impl Default for RemesherParams {
         //     q: 0.8,
         //     ..SwapParams::default()
         // }));
-        steps.push(RemeshingStep::Collapse(CollapseParams::default()));
         steps.push(RemeshingStep::Split(SplitParams::default()));
+        steps.push(RemeshingStep::Collapse(CollapseParams::default()));
         steps.push(RemeshingStep::Swap(SwapParams {
             q: 0.4,
             ..SwapParams::default()
@@ -216,7 +216,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             .zip(mesh.ftags())
             .for_each(|(f, t)| res.add_tagged_face(f, t).unwrap());
 
-        res.print_stats();
+        //res.print_stats();
         res.stats.push(StepStats::Init(InitStats::new(&res)));
         Ok(res)
     }
@@ -690,18 +690,22 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             }
         }
         debug!("Done in {}s", now.elapsed().as_secs_f32());
-        self.print_stats();
+        //self.print_stats();
         let stats_to_return = self.stats();
         Ok(stats_to_return.to_vec())
     }
 
     /// Print length and quality stats on the mesh / metric
     pub fn print_stats(&self) {
+        println!("--------------------------------");
+
         let stats = Stats::new(self.lengths_iter(), &[f64::sqrt(0.5), f64::sqrt(2.0)]);
-        debug!("Length: {stats}");
+        println!("Length: {stats}");
 
         let stats = Stats::new(self.qualities_iter(), &[0.4, 0.6, 0.8]);
-        debug!("Qualities: {stats}");
+        println!("Qualities: {stats}");
+
+        println!("--------------------------------");
     }
 
     /// Return the stats at each remeshing step as a json string
