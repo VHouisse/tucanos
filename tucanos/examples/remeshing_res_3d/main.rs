@@ -73,9 +73,13 @@ fn calculate_op_metric_elems(
         let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
         if dist_sq <= RADIUS_SQ_ACTUAL {
             if option {
+                println!("Implied Metric {chosen_metric:?}");
                 chosen_metric.scale_aniso(0.25);
+                println!("Collapse Metric {chosen_metric:?}");
             } else {
+                println!("Iplied Metric {chosen_metric:?}");
                 chosen_metric.scale_aniso(4.0); //AnisoMetric3d::from_iso(&IsoMetric::<3>::from(h_inside_sphere_iso));
+                println!("Split Metric {chosen_metric:?}");
             }
         }
         result_metrics.push(chosen_metric);
