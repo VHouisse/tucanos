@@ -55,7 +55,7 @@ fn work_eval(initial_density: f64, actual_density: f64, intersected_density: f64
     let verif_cost_swap = 1.0; // Coût de vérification de swap défini comme coût référence
     let verif_cost_split = 0.016;
     let verif_cost_collapse = 0.016;
-    let mean_verif_cost = 0.7; // Un peu plus haut qu'attendu car possibilité de swap réussi ( plus cher que vérif  )
+    let total_verif_cost = 1.032; // Cout cumulé des vérifications
     // Cout unitaire d'une vérif (basé sur le temps de vérif d'un swap)
     let insert_prop = intersected_density - initial_density;
     let insert_bool = if insert_prop < 0.1 { 1.0 } else { 0.0 };
@@ -63,8 +63,8 @@ fn work_eval(initial_density: f64, actual_density: f64, intersected_density: f64
     let collapse_prop = intersected_density - actual_density;
     let collapse_bool = if collapse_prop < 0.1 { 1.0 } else { 0.0 };
 
-    vol * ((insert_c + 0.10 * collapse_c + 6.0 * mean_verif_cost) * insert_prop // Un split provoque 0.10 collapse et 6 nouvelles arrêtes
-        + (collapse_c + 0.78 * insert_c - 6.0 * mean_verif_cost) * collapse_prop)// Un collapse provoque 0.78 split et supprime 6 arrêtes 
+    vol * ((insert_c + 0.10 * collapse_c + 6.0 * total_verif_cost) * insert_prop // Un split provoque 0.10 collapse et 6 nouvelles arrêtes
+        + (collapse_c + 0.78 * insert_c - 6.0 * total_verif_cost) * collapse_prop)// Un collapse provoque 0.78 split et supprime 6 arrêtes 
         + (verif_cost_swap + verif_cost_split * insert_bool + verif_cost_collapse * collapse_bool) // Si collapse ou split, on ne fait pas la vérification correspondante 
 }
 

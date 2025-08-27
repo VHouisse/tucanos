@@ -673,7 +673,8 @@ where
         // Renumbering based on Hilbert
         let now = Instant::now();
         let estimator = C::new(&metric);
-        let weights = estimator.compute(&mesh, &metric); //println!("Weights {weights:?}");
+        let weights = estimator.compute(&mesh, &metric);
+        //println!("Weights {weights:?}");
         let weights_time = now.elapsed();
         println!("Tps d'éxécution du weight computing : {weights_time:?}");
         let now = Instant::now();
@@ -933,8 +934,10 @@ where
 
         let now = Instant::now();
         let mut ifc = ifc.into_inner().unwrap();
-        // let n_elemnt_ifc = ifc.n_elems();
-        // let n_verts_ifc = ifc.n_verts();
+        let n_elemnt_ifc = ifc.n_elems();
+        let n_verts_ifc = ifc.n_verts();
+        println!(" Elements inside the interface : {n_elemnt_ifc} vertices : {n_verts_ifc}");
+
         if self.debug {
             let fname = format!("level_{level}_ifc.vtu");
             ifc.vtu_writer().export(&fname).unwrap();

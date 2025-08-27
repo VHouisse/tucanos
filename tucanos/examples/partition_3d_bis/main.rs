@@ -1,6 +1,6 @@
 //! Mesh partition example
 use env_logger::Env;
-use nalgebra::Vector3;
+// use nalgebra::Vector3;
 use std::{path::Path, time::Instant};
 #[cfg(feature = "metis")]
 use tmesh::mesh::partition::{MetisKWay, MetisPartitioner, MetisRecursive};
@@ -15,7 +15,7 @@ use tmesh::{
 };
 use tucanos::{
     mesh::{GElem, SimplexMesh, Tetrahedron, test_meshes::test_mesh_3d},
-    metric::{AnisoMetric, AnisoMetric3d, IsoMetric},
+    metric::{AnisoMetric, AnisoMetric3d},
     remesher::{ElementCostEstimator, TotoCostEstimator},
 };
 //use tucanos::remesher::{Remesher, RemesherParams};
@@ -78,8 +78,8 @@ const CENTER_X: f64 = 0.4;
 const CENTER_Y: f64 = 0.4;
 const CENTER_Z: f64 = 0.4;
 const RADIUS: f64 = 1.0;
-const RADIUS_SQ_ACTUAL: f64 = RADIUS * 0.2;
-const H_INSIDE_SPHERE_ISO: f64 = 0.01;
+const RADIUS_SQ_ACTUAL: f64 = RADIUS * 0.3;
+// const H_INSIDE_SPHERE_ISO: f64 = 0.01;
 
 // const H_OUTSIDE_SPHERE_ISO: f64 = 3.0;
 
@@ -93,7 +93,7 @@ fn calculate_split_metric_elems(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<Aniso
         let z = p[2];
         let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
         if dist_sq <= RADIUS_SQ_ACTUAL {
-            chosen_metric = AnisoMetric3d::from_iso(&IsoMetric::<3>::from(H_INSIDE_SPHERE_ISO));
+            chosen_metric.scale_aniso(4.0);
         }
         result_metrics.push(chosen_metric);
     }
@@ -101,38 +101,38 @@ fn calculate_split_metric_elems(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<Aniso
     mesh.elem_data_to_vertex_data_metric(&result_metrics)
         .unwrap()
 }
-const STRETCH_MAGNITUDE: f64 = 0.001;
-const PERP_MAGNITUDE: f64 = 0.1;
-fn calculate_stretching_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoMetric3d> {
-    let mut result_metrics = Vec::with_capacity(mesh.n_elems() as usize);
+// const STRETCH_MAGNITUDE: f64 = 0.001;
+// const PERP_MAGNITUDE: f64 = 0.1;
+// fn calculate_stretching_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoMetric3d> {
+//     let mut result_metrics = Vec::with_capacity(mesh.n_elems() as usize);
 
-    let stretch_direction = Vector3::new(0.0, 0.0, 1.0);
-    let perp_direction_x = Vector3::new(1.0, 0.0, 0.0);
-    let perp_direction_y = Vector3::new(0.0, 1.0, 0.0);
+//     let stretch_direction = Vector3::new(0.0, 0.0, 1.0);
+//     let perp_direction_x = Vector3::new(1.0, 0.0, 0.0);
+//     let perp_direction_y = Vector3::new(0.0, 1.0, 0.0);
 
-    for g_elem in mesh.gelems() {
-        let mut chosen_metric = g_elem.implied_metric();
+//     for g_elem in mesh.gelems() {
+//         let mut chosen_metric = g_elem.implied_metric();
 
-        let p = g_elem.center();
-        let x = p[0];
-        let y = p[1];
-        // let z = p[2];
-        if (x - 1.0).abs() < 0.1 && (y - 0.5).abs() < 0.3 {
-            let dist_to_center_y = (p.y - 0.5).abs();
-            let influence = 1.0 - (dist_to_center_y / 0.3);
+//         let p = g_elem.center();
+//         let x = p[0];
+//         let y = p[1];
+//         // let z = p[2];
+//         if (x - 1.0).abs() < 0.1 && (y - 0.5).abs() < 0.3 {
+//             let dist_to_center_y = (p.y - 0.5).abs();
+//             let influence = 1.0 - (dist_to_center_y / 0.3);
 
-            chosen_metric = AnisoMetric3d::from_sizes(
-                &(stretch_direction * STRETCH_MAGNITUDE * influence),
-                &(perp_direction_x * PERP_MAGNITUDE),
-                &(perp_direction_y * PERP_MAGNITUDE),
-            );
-        }
-        result_metrics.push(chosen_metric);
-    }
+//             chosen_metric = AnisoMetric3d::from_sizes(
+//                 &(stretch_direction * STRETCH_MAGNITUDE * influence),
+//                 &(perp_direction_x * PERP_MAGNITUDE),
+//                 &(perp_direction_y * PERP_MAGNITUDE),
+//             );
+//         }
+//         result_metrics.push(chosen_metric);
+//     }
 
-    mesh.elem_data_to_vertex_data_metric(&result_metrics)
-        .unwrap()
-}
+//     mesh.elem_data_to_vertex_data_metric(&result_metrics)
+//         .unwrap()
+// }
 
 fn print_partition_cc(msh: &SimplexMesh<3, Tetrahedron>, n_parts: usize) {
     for i in 0..n_parts {
@@ -162,12 +162,13 @@ pub fn main() -> Result<()> {
     let n_parts = 8;
     msh.compute_vertex_to_elems();
     msh.compute_volumes();
-    let _m = calculate_split_metric_elems(&msh);
-    let m = calculate_stretching_metric(&msh);
-    msh.compute_volumes();
+    println!("yes");
+    let m = calculate_split_metric_elems(&msh);
+    // let _m = calculate_stretching_metric(&msh);
 
     let estimator = TotoCostEstimator::<3, Tetrahedron, AnisoMetric3d>::new(&m);
     let weights = estimator.compute(&msh, &m);
+    println!("yes");
     let start = Instant::now();
     let (quality, imbalance) = msh.partition::<HilbertPartitioner>(n_parts, Some(weights))?;
     let t = start.elapsed();

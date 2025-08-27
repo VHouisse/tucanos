@@ -55,7 +55,7 @@ const CENTER_X: f64 = 0.4;
 const CENTER_Y: f64 = 0.4;
 const CENTER_Z: f64 = 0.4;
 const RADIUS: f64 = 1.0;
-const RADIUS_SQ_ACTUAL: f64 = RADIUS * 0.3;
+const RADIUS_SQ_ACTUAL: f64 = RADIUS * 0.5;
 
 fn calculate_op_metric_elems(
     mesh: &SimplexMesh<3, Tetrahedron>,
@@ -73,13 +73,9 @@ fn calculate_op_metric_elems(
         let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
         if dist_sq <= RADIUS_SQ_ACTUAL {
             if option {
-                println!("Implied Metric {chosen_metric:?}");
                 chosen_metric.scale_aniso(0.25);
-                println!("Collapse Metric {chosen_metric:?}");
             } else {
-                println!("Iplied Metric {chosen_metric:?}");
                 chosen_metric.scale_aniso(4.0); //AnisoMetric3d::from_iso(&IsoMetric::<3>::from(h_inside_sphere_iso));
-                println!("Split Metric {chosen_metric:?}");
             }
         }
         result_metrics.push(chosen_metric);
@@ -100,21 +96,19 @@ fn calculate_stretching_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoM
 
     for g_elem in mesh.gelems() {
         let mut chosen_metric = g_elem.implied_metric();
-
         let p = g_elem.center();
         let x = p[0];
         let y = p[1];
-        // let z = p[2];
-        if (x - 1.0).abs() < 0.1 && (y - 0.5).abs() < 0.3 {
-            let dist_to_center_y = (p.y - 0.5).abs();
-            let influence = 1.0 - (dist_to_center_y / 0.3);
-
+        let z = p[2];
+        let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
+        if dist_sq <= RADIUS_SQ_ACTUAL {
             chosen_metric = AnisoMetric3d::from_sizes(
-                &(stretch_direction * STRETCH_MAGNITUDE * influence),
+                &(stretch_direction * STRETCH_MAGNITUDE),
                 &(perp_direction_x * PERP_MAGNITUDE),
                 &(perp_direction_y * PERP_MAGNITUDE),
             );
         }
+
         result_metrics.push(chosen_metric);
     }
 
