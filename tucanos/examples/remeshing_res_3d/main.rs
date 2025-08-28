@@ -1,6 +1,5 @@
 //! Mesh partition example
 use clap::Parser;
-use nalgebra::Vector3;
 
 use std::{path::Path, time::Instant};
 
@@ -55,7 +54,7 @@ const CENTER_X: f64 = 0.4;
 const CENTER_Y: f64 = 0.4;
 const CENTER_Z: f64 = 0.4;
 const RADIUS: f64 = 1.0;
-const RADIUS_SQ_ACTUAL: f64 = RADIUS * 0.5;
+const RADIUS_SQ_ACTUAL: f64 = RADIUS * 0.3;
 
 fn calculate_op_metric_elems(
     mesh: &SimplexMesh<3, Tetrahedron>,
@@ -84,29 +83,26 @@ fn calculate_op_metric_elems(
         .unwrap()
 }
 
-const STRETCH_MAGNITUDE: f64 = 0.001;
-const PERP_MAGNITUDE: f64 = 0.1;
-
 fn calculate_stretching_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoMetric3d> {
     let mut result_metrics = Vec::with_capacity(mesh.n_elems() as usize);
-
-    let stretch_direction = Vector3::new(0.0, 0.0, 1.0);
-    let perp_direction_x = Vector3::new(1.0, 0.0, 0.0);
-    let perp_direction_y = Vector3::new(0.0, 1.0, 0.0);
+    let mut am: [f64; 6] = [0.0; 6];
+    // let stretch_direction = Vector3::new(0.0, 0.0, 1.0);
+    // let perp_direction_x = Vector3::new(1.0, 0.0, 0.0);
+    // let perp_direction_y = Vector3::new(0.0, 1.0, 0.0);
 
     for g_elem in mesh.gelems() {
         let mut chosen_metric = g_elem.implied_metric();
+        let mut metric_am = g_elem.implied_metric();
         let p = g_elem.center();
         let x = p[0];
         let y = p[1];
         let z = p[2];
         let dist_sq = (x - CENTER_X).powi(2) + (y - CENTER_Y).powi(2) + (z - CENTER_Z).powi(2);
         if dist_sq <= RADIUS_SQ_ACTUAL {
-            chosen_metric = AnisoMetric3d::from_sizes(
-                &(stretch_direction * STRETCH_MAGNITUDE),
-                &(perp_direction_x * PERP_MAGNITUDE),
-                &(perp_direction_y * PERP_MAGNITUDE),
-            );
+            metric_am.scale(4.0);
+            am[..5].copy_from_slice(&chosen_metric.m[..5]);
+            am[0] = metric_am.m[0];
+            chosen_metric = AnisoMetric3d::from_slice(&am);
         }
 
         result_metrics.push(chosen_metric);

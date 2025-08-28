@@ -34,9 +34,9 @@ NUM_REPETITIONS=5
 SPLITS_2D=()
 SPLITS_3D=(4 5 6)
 METRIC_TYPES=("iso")
-COST_ESTIMATORS=("Toto")
+COST_ESTIMATORS=("Toto" "Nocost")
 PARTITIONERS=("MetisRecursive")
-OPTIONS=("false" "true")
+OPTIONS=("true")
 
 echo "Starting ALL remeshing tests (2D and 3D) with all configurations..."
 echo "Each simulation will be run $NUM_REPETITIONS times."

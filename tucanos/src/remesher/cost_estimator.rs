@@ -47,25 +47,34 @@ pub struct TotoCostEstimator<
     _e: PhantomData<E>,
     _m: PhantomData<M>,
 }
+const SPLIT_UNIT_COST: f64 = 3.65; // Un split dure en moyenne 3.65 * plus longtemps qu'une vérif
+const COLLAPSE_UNIT_COST: f64 = 8.395; // Un collpase dure en moyenne 2.3 * plus longtemps qu'une vérif 2.3*3.65 = 8.395
+const VERIF_COST_SWAP: f64 = 1.0; // Coût de vérification de swap défini comme coût référence
+const VERIF_COST_SPLIT: f64 = 0.016;
+const VERIF_COST_COLLAPSE: f64 = 0.016;
+const TOTAL_VERIF_COST: f64 = 1.032; // Cout cumulé des vérifications
+const RHO_COLLAPSE: f64 = 0.0005; // Proportion de collapse engendré par un split
+const RHO_SPLIT: f64 = 0.0005; // Proportion de split engendré par un collapse
+const LAMBDA: f64 = 6.0; // Nombre d'arrêtes crées (resp supprimées) par un split (resp collapse) en moyenne
+
+const TOTAL_SPLIT_COST: f64 = (SPLIT_UNIT_COST
+    + COLLAPSE_UNIT_COST * RHO_COLLAPSE
+    + LAMBDA * TOTAL_VERIF_COST * (1.0 - RHO_COLLAPSE))
+    / (1.0 - RHO_SPLIT * RHO_COLLAPSE); // alpha dans la formule
+
+const TOTAL_COLLAPSE_COST: f64 =
+    (TOTAL_SPLIT_COST - SPLIT_UNIT_COST - LAMBDA * TOTAL_VERIF_COST) / RHO_COLLAPSE;
 
 fn work_eval(initial_density: f64, actual_density: f64, intersected_density: f64, vol: f64) -> f64 {
-    // Set up to csts and evaluate real coeff
-    let insert_c: f64 = 3.65; // Un split dure en moyenne 3.65 * plus longtemps qu'une vérif
-    let collapse_c: f64 = 8.395; // Un collpase dure en moyenne 2.3 * plus longtemps qu'une vérif 2.3*3.65 = 8.395 
-    let verif_cost_swap = 1.0; // Coût de vérification de swap défini comme coût référence
-    let verif_cost_split = 0.016;
-    let verif_cost_collapse = 0.016;
-    let total_verif_cost = 1.032; // Cout cumulé des vérifications
-    // Cout unitaire d'une vérif (basé sur le temps de vérif d'un swap)
     let insert_prop = intersected_density - initial_density;
     let insert_bool = if insert_prop < 0.1 { 1.0 } else { 0.0 };
 
     let collapse_prop = intersected_density - actual_density;
     let collapse_bool = if collapse_prop < 0.1 { 1.0 } else { 0.0 };
 
-    vol * ((insert_c + 0.10 * collapse_c + 6.0 * total_verif_cost) * insert_prop // Un split provoque 0.10 collapse et 6 nouvelles arrêtes
-        + (collapse_c + 0.78 * insert_c - 6.0 * total_verif_cost) * collapse_prop)// Un collapse provoque 0.78 split et supprime 6 arrêtes 
-        + (verif_cost_swap + verif_cost_split * insert_bool + verif_cost_collapse * collapse_bool) // Si collapse ou split, on ne fait pas la vérification correspondante 
+    vol * (TOTAL_SPLIT_COST * insert_prop // Un split provoque 0.10 collapse et 6 nouvelles arrêtes
+        + TOTAL_COLLAPSE_COST * collapse_prop)// Un collapse provoque 0.78 split et supprime 6 arrêtes 
+        + (VERIF_COST_SWAP + VERIF_COST_SPLIT * insert_bool + VERIF_COST_COLLAPSE * collapse_bool) // Si collapse ou split, on ne fait pas la vérification correspondante 
 }
 
 #[allow(clippy::new_without_default)]

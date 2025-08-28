@@ -678,7 +678,7 @@ impl fmt::Display for AnisoMetric2d {
 /// TODO: reuse the eigenvalue solvers?
 #[derive(Clone, Copy, Debug)]
 pub struct AnisoMetric3d {
-    m: [f64; 6],
+    pub m: [f64; 6],
     v: f64,
 }
 
