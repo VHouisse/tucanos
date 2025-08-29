@@ -1,7 +1,7 @@
 //! Mesh partition example
 use clap::Parser;
 
-use std::{path::Path, time::Instant};
+use std::{collections::HashMap, path::Path, time::Instant};
 
 #[cfg(feature = "metis")]
 use tmesh::mesh::partition::{MetisKWay, MetisPartitioner, MetisRecursive};
@@ -24,20 +24,20 @@ use tucanos::{
     metric::{AnisoMetric, AnisoMetric3d, HasImpliedMetric, IsoMetric, Metric},
     remesher::{
         ElementCostEstimator, NoCostEstimator, ParallelRemesher, ParallelRemesherParams,
-        RemesherParams, TotoCostEstimator,
+        ParallelRemeshingInfo, Remesher, RemesherParams, RemeshingInfo, TotoCostEstimator,
     },
 };
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Effectue un remaillage 3D avec des options configurables.", long_about = None)]
 struct Args {
-    #[arg(short, long, default_value_t = 5)]
+    #[arg(short, long, default_value_t = 3)]
     num_splits: usize,
 
     #[arg(short, long, default_value_t = String::from("iso"))]
     metric_type: String,
 
-    #[arg(short, long, default_value_t = 8)]
+    #[arg(short, long, default_value_t = 2)]
     n_parts: u32,
 
     #[arg(short, long, default_value_t = String::from("Toto"))]
@@ -83,6 +83,53 @@ fn calculate_op_metric_elems(
         .unwrap()
 }
 
+fn calculate_iso_metric(mesh: &SimplexMesh<3, Tetrahedron>, h: f64) -> Vec<IsoMetric<3>> {
+    let mut result_metrics = Vec::with_capacity(mesh.n_elems() as usize);
+
+    let min_h = h / 2.0;
+    let max_h = h / 2.0;
+
+    let num_steps = 1;
+    let step_size = (max_h - min_h) / (f64::from(num_steps));
+
+    let target_sizes: Vec<f64> = (0..num_steps)
+        .map(|i| min_h + f64::from(i) * step_size)
+        .collect();
+
+    let mut final_target_sizes = Vec::with_capacity(mesh.n_elems() as usize);
+    for i in 0..mesh.n_elems() {
+        final_target_sizes.push(target_sizes[(i % (target_sizes.len() as u32)) as usize]);
+    }
+    println!("-- Proportions des tailles d'éléments --");
+    let total_elements = final_target_sizes.len();
+    let mut counts: HashMap<u64, u32> = HashMap::new();
+    let scale_factor = 1_000_000.0;
+
+    for &size in &final_target_sizes {
+        let scaled_size = (size * scale_factor) as u64;
+        *counts.entry(scaled_size).or_insert(0) += 1;
+    }
+
+    let mut sorted_keys: Vec<&u64> = counts.keys().collect();
+    sorted_keys.sort();
+    println!("H maillage: {h}");
+    for key in sorted_keys {
+        let count = counts.get(key).unwrap();
+        let original_size = (*key as f64) / scale_factor;
+        let proportion = (f64::from(*count)) / (total_elements as f64) * 100.0;
+        println!(
+            "Taille: {original_size:.6} | Occurrences: {count} | Proportion: {proportion:.2}%",
+        );
+    }
+    println!("---------------------------------------");
+
+    for h in final_target_sizes {
+        result_metrics.push(IsoMetric::from(h));
+    }
+    mesh.elem_data_to_vertex_data_metric(&result_metrics)
+        .unwrap()
+}
+
 fn calculate_stretching_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoMetric3d> {
     let mut result_metrics = Vec::with_capacity(mesh.n_elems() as usize);
     let mut am: [f64; 6] = [0.0; 6];
@@ -111,62 +158,6 @@ fn calculate_stretching_metric(mesh: &SimplexMesh<3, Tetrahedron>) -> Vec<AnisoM
     mesh.elem_data_to_vertex_data_metric(&result_metrics)
         .unwrap()
 }
-
-// #[allow(clippy::unnecessary_wraps)]
-// #[allow(clippy::extra_unused_type_parameters)]
-// #[allow(clippy::needless_pass_by_value)]
-// fn perform_remeshing_sequential<
-//     const D: usize,
-//     E: Elem,
-//     M: Metric<D>
-//         + Into<<E::Geom<D, IsoMetric<D>> as HasImpliedMetric<D, IsoMetric<D>>>::ImpliedMetricType>,
-//     P: Partitioner,
-//     C: ElementCostEstimator<D, E, M>,
-// >(
-//     mut msh: SimplexMesh<D, E>,
-//     geom: &LinearGeometry<D, E::Face>,
-//     metrics: Vec<M>,
-//     cost_estimator_name: &str, // Renamed to avoid confusion with the generic type C
-//     partitioner_name: &str,    // Added partitioner name for printout
-//     _n_parts: u32,
-//     metric_type_arg: &str,
-// ) -> Result<SimplexMesh<D, E>>
-// where
-//     SimplexMesh<D, E>: HasTmeshImpl<D, E>,
-//     SimplexMesh<D, E::Face>: HasTmeshImpl<D, E::Face> + HasCurvature<D>,
-//     E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
-// {
-//     msh.compute_volumes();
-//     let n_elements = msh.n_elems();
-//     let n_verts_init = msh.n_verts();
-//     // let remesher = ParallelRemesher::<D, E, M, P, C>::new(msh, metrics, n_parts)?;
-//     // let dd_params = ParallelRemesherParams::default();
-//     let mut remesher = Remesher::new(&msh, &metrics, geom).unwrap();
-//     let params = RemesherParams::default();
-//     let now = Instant::now();
-//     let stats = remesher.remesh(&params, geom).unwrap();
-//     let infos = ParallelRemeshingInfo {
-//         info: RemeshingInfo {
-//             n_verts_init,
-//             n_verts_final: 100,
-//             time: now.elapsed().as_secs_f64(),
-//             remesh_stats: stats,
-//         },
-//         ..Default::default()
-//     };
-//     infos.info.print_summary_remesh_stats();
-//     let t2 = now.elapsed();
-//     debug!(
-//         "DATA,D={D},metric_type={metric_type_arg},cost_estimator={cost_estimator_name},partitioner={partitioner_name},num_elements={n_elements},time_seconds={t2:?}"
-//     );
-//     let new_mesh = remesher.to_mesh(false);
-//     let n_m_elements = new_mesh.n_elems();
-//     let n_m_verts = new_mesh.n_verts();
-//     println!(
-//         "Nombre d'éléments avant : {n_elements}, nb_verts : {n_verts_init}, nb elems after {n_m_elements}, nb verts after {n_m_verts}",
-//     );
-//     Ok(new_mesh)
-// }
 
 fn quality_remeshed<const D: usize, E: Elem>(remeshed: &SimplexMesh<D, E>) -> f64 {
     let mut qualities = Vec::with_capacity(remeshed.n_elems() as usize);
@@ -221,6 +212,64 @@ where
     Ok(meshed)
 }
 
+#[allow(clippy::unnecessary_wraps)]
+#[allow(clippy::extra_unused_type_parameters)]
+#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::too_many_arguments)]
+fn perform_remeshing_sequential<
+    const D: usize,
+    E: Elem,
+    M: Metric<D>
+        + Into<<E::Geom<D, IsoMetric<D>> as HasImpliedMetric<D, IsoMetric<D>>>::ImpliedMetricType>,
+    P: Partitioner,
+    C: ElementCostEstimator<D, E, M>,
+>(
+    mut msh: SimplexMesh<D, E>,
+    geom: &LinearGeometry<D, E::Face>,
+    metrics: Vec<M>,
+    _cost_estimator_name: &str, // Renamed to avoid confusion with the generic type C
+    _partitioner_name: &str,    // Added partitioner name for printout
+    _n_parts: u32,
+    _metric_type_arg: &str,
+    _option: bool,
+) -> Result<SimplexMesh<D, E>>
+where
+    SimplexMesh<D, E>: HasTmeshImpl<D, E>,
+    SimplexMesh<D, E::Face>: HasTmeshImpl<D, E::Face> + HasCurvature<D>,
+    E::Geom<D, IsoMetric<D>>: HasImpliedMetric<D, IsoMetric<D>>,
+{
+    msh.compute_volumes();
+    let n_elements = msh.n_elems();
+    let n_verts_init = msh.n_verts();
+    // let remesher = ParallelRemesher::<D, E, M, P, C>::new(msh, metrics, n_parts)?;
+    // let dd_params = ParallelRemesherParams::default();
+    let mut remesher = Remesher::new(&msh, &metrics, geom).unwrap();
+    let params = RemesherParams::default();
+    let now = Instant::now();
+    let stats = remesher.remesh(&params, geom).unwrap();
+    let infos = ParallelRemeshingInfo {
+        info: RemeshingInfo {
+            n_verts_init,
+            n_verts_final: 100,
+            time: now.elapsed().as_secs_f64(),
+            remesh_stats: stats,
+        },
+        ..Default::default()
+    };
+    infos.info.print_summary_remesh_stats();
+    // let t2 = now.elapsed();
+    // debug!(
+    //     "DATA,D={D},metric_type={metric_type_arg},cost_estimator={cost_estimator_name},partitioner={partitioner_name},num_elements={n_elements},time_seconds={t2:?}"
+    // );
+    let new_mesh = remesher.to_mesh(false);
+    let n_m_elements = new_mesh.n_elems();
+    let n_m_verts = new_mesh.n_verts();
+    println!(
+        "Nombre d'éléments avant : {n_elements}, nb_verts : {n_verts_init}, nb elems after {n_m_elements}, nb verts after {n_m_verts}",
+    );
+    Ok(new_mesh)
+}
+
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -233,8 +282,14 @@ fn main() -> Result<()> {
     for _ in 0..args.num_splits {
         msh = msh.split();
     }
+    let h = 1.0 / 2.0_f64.powf(f64::from(args.num_splits as u32)); //taille éléments
+
     let mesh_elems = msh.n_elems();
+    msh.compute_vertex_to_vertices();
+    let vtv = msh.get_vertex_to_vertices().unwrap();
+    let n_edges = vtv.n_edges();
     println!("Nombre d'éléments initiaux {mesh_elems}");
+    println!("Nombre d'aretes : {n_edges}");
     let (bdy, _) = msh.boundary();
     let _topo = msh.compute_topology();
     let geom = LinearGeometry::<3, Triangle>::new(&msh, bdy).unwrap();
@@ -246,21 +301,32 @@ fn main() -> Result<()> {
     match args.metric_type.as_str() {
         "iso" => {
             msh.compute_vertex_to_elems();
-            let m: Vec<AnisoMetric3d> = if args.option.as_str() == "true" {
+            let _m: Vec<AnisoMetric3d> = if args.option.as_str() == "true" {
                 calculate_op_metric_elems(&msh, true) //Collapse Metric 
             } else {
                 option = false;
                 calculate_op_metric_elems(&msh, false) // Split Metric 
             };
+            let m = calculate_iso_metric(&msh, h);
+            // println!("Metrique résultante par sommets : {m:?}");
+            // let mut result_metrics = Vec::with_capacity(msh.n_elems() as usize);
+            // for g_elem in msh.gelems() {
+            //     let chosen_metric = g_elem.implied_metric();
+            //     result_metrics.push(chosen_metric);
+            // }
+            // let implied_metric_vec = msh
+            //     .elem_data_to_vertex_data_metric(&result_metrics)
+            //     .unwrap();
+            // println!("Vecteur des métriques induites : {implied_metric_vec:?}");
             if args.cost_estimator.as_str() == "Nocost" {
                 match args.partitionner.as_str() {
                     "HilbertPartitionner" => {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             HilbertPartitioner,
-                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -276,9 +342,9 @@ fn main() -> Result<()> {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             HilbertBallPartitioner,
-                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -294,9 +360,9 @@ fn main() -> Result<()> {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             BFSPartitionner,
-                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -309,12 +375,12 @@ fn main() -> Result<()> {
                         )?;
                     }
                     "BFSWRPartitionner" => {
-                        perform_remeshing::<
+                        perform_remeshing_sequential::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             BFSWRPartitionner,
-                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -331,9 +397,9 @@ fn main() -> Result<()> {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             MetisPartitioner<MetisKWay>,
-                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -347,12 +413,12 @@ fn main() -> Result<()> {
                     }
                     #[cfg(feature = "metis")]
                     "MetisRecursive" => {
-                        perform_remeshing::<
+                        let msh = perform_remeshing_sequential::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             MetisPartitioner<MetisRecursive>,
-                            NoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            NoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -362,7 +428,11 @@ fn main() -> Result<()> {
                             args.n_parts,
                             "iso",
                             option,
-                        )?;
+                        )
+                        .unwrap();
+                        let file_name = "MetisR_iso_Remeshed.vtu".to_string();
+                        let output_path = output_dir.join(&file_name);
+                        let _ = msh.write_vtk(output_path.to_str().unwrap());
                     }
                     _ => {
                         return Err(Box::new(std::io::Error::new(
@@ -377,9 +447,9 @@ fn main() -> Result<()> {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             HilbertPartitioner,
-                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -395,9 +465,9 @@ fn main() -> Result<()> {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             HilbertBallPartitioner,
-                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -413,9 +483,9 @@ fn main() -> Result<()> {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             BFSPartitionner,
-                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -431,9 +501,9 @@ fn main() -> Result<()> {
                         perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             BFSWRPartitionner,
-                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -450,9 +520,9 @@ fn main() -> Result<()> {
                         let msh = perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             MetisPartitioner<MetisKWay>,
-                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,
@@ -473,9 +543,9 @@ fn main() -> Result<()> {
                         let msh = perform_remeshing::<
                             3,
                             Tetrahedron,
-                            AnisoMetric3d,
+                            IsoMetric<3>,
                             MetisPartitioner<MetisRecursive>,
-                            TotoCostEstimator<3, Tetrahedron, AnisoMetric3d>,
+                            TotoCostEstimator<3, Tetrahedron, IsoMetric<3>>,
                         >(
                             msh,
                             &geom,

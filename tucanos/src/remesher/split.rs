@@ -89,6 +89,7 @@ impl<const D: usize, E: Elem, M: Metric<D>> Remesher<D, E, M> {
             let mut n_fails = 0;
             let mut n_removed = 0;
             let mut n_verifs = 0;
+            println!(" Toto {}", self.edges.len());
             for i_edge in indices {
                 let verif_time = Instant::now();
                 let edg = edges[i_edge];

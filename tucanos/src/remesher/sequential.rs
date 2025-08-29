@@ -126,8 +126,8 @@ impl Default for RemesherParams {
         //     q: 0.8,
         //     ..SwapParams::default()
         // }));
-        steps.push(RemeshingStep::Collapse(CollapseParams::default()));
         steps.push(RemeshingStep::Split(SplitParams::default()));
+        steps.push(RemeshingStep::Collapse(CollapseParams::default()));
         steps.push(RemeshingStep::Swap(SwapParams {
             q: 0.4,
             ..SwapParams::default()
