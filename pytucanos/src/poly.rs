@@ -13,6 +13,9 @@ use tmesh::{
     dual::{PolyMesh, PolyMeshType, SimplePolyMesh},
 };
 
+use crate::dual::PyDualMesh2d;
+use crate::dual::PyDualMesh3d;
+
 /// Type of poly cells (mapping of `tmesh::PolyMeshType`)
 #[pyclass(eq, eq_int)]
 #[derive(Clone, PartialEq, Eq)]
@@ -190,3 +193,16 @@ macro_rules! create_poly_mesh {
 
 create_poly_mesh!(PyPolyMesh2d, 2);
 create_poly_mesh!(PyPolyMesh3d, 3);
+
+#[pymethods]
+impl PyPolyMesh2d {
+    fn simplify(dual: PyDualMesh2d) -> Self {
+        Self(SimplePolyMesh::simplify(&dual.0, true))
+    }
+}
+#[pymethods]
+impl PyPolyMesh3d {
+    fn simplify(dual: PyDualMesh3d) -> Self {
+        Self(SimplePolyMesh::simplify(&dual.0, true))
+    }
+}
